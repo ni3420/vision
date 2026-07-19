@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   LogOut
 } from "lucide-react";
+import Plan from "@/components/plan";
 
 const NAV_ITEMS = [
   {
@@ -87,6 +88,8 @@ const SideBar = () => {
       </nav>
 
       <div className="p-4 border-t border-slate-100 dark:border-slate-800/40 space-y-1.5">
+      <Plan/>
+
         <Link
           href="/settings"
           className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 outline-none group ${

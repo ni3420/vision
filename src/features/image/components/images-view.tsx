@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { Download, Loader2, AlertCircle, Sparkles } from "lucide-react";
+import Loading from "@/components/loading-spinner";
 
 interface ImageViewsProps {
   data?: {
@@ -37,19 +38,8 @@ const ImageViews = ({ data, isPending, isError, dimensions }: ImageViewsProps) =
 
   if (isPending) {
     return (
-      <div className="w-full flex flex-col items-center justify-center min-h-[350px] bg-card border border-border/60 rounded-3xl p-8 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.01] to-transparent pointer-events-none" />
-        <div className="relative flex flex-col items-center max-w-sm text-center space-y-4">
-          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20 animate-spin">
-            <Loader2 className="h-5 w-5 text-primary" />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-sm font-bold text-foreground tracking-tight">Compiling Pipeline</h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Allocating global neural engine cluster nodes. Generating visual frame variations...
-            </p>
-          </div>
-        </div>
+      <div >
+        <Loading/>
       </div>
     );
   }

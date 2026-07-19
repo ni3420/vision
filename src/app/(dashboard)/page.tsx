@@ -1,13 +1,29 @@
-"use client"
+"use client";
 
-import CreateImageForm from "@/features/image/components/create-image-form";
-import ImageViews from "@/features/image/components/images-view";
+import { useEffect } from "react";
+import { useUser } from "@clerk/nextjs";
+import { useLogin } from "@/features/auth/api/use-login";
 
 const Page = () => {
-    return ( <>
-    
-    <CreateImageForm/>
-    </> );
-}
- 
+  const { user, isLoaded } = useUser();
+  const { mutate } = useLogin();
+
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+      const email = user.primaryEmailAddress?.emailAddress;
+
+  if (!email) return;
+
+    mutate({
+      json: {
+        email,
+        name: user.fullName || "",
+        userId: user.id,
+      },
+    });
+  }, [isLoaded, user, mutate]);
+
+  return null;
+};
+
 export default Page;
