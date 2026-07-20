@@ -1,28 +1,26 @@
 import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
-import { z } from "zod"
 import axios from "axios"
-
-const imageGenerationSchema = z.object({
-  prompt: z.string(),
-  dimensions: z.string(), // e.g., "232*300"
-  quantity: z.union([z.number(), z.string()]), // accepts "3" or 3
-})
-
+import { imageGenerationSchema } from "../schema"
+import Image from "@/models/image.models"
+import { getAuth } from "@clerk/hono"
+import {checkPlanLimit} from "@/middleware/freeUsesLimit-middleware"
+import { User } from "@/models/user.models"
 const app = new Hono()
-  .post("/", zValidator("json", imageGenerationSchema), async (c) => {
+  .post("/", checkPlanLimit,zValidator("json", imageGenerationSchema), async (c) => {
     try {
+      const auth = getAuth(c)
+      if (!auth || !auth.userId) {
+        return c.json({ success: false, error: "Unauthorized access vector" }, 401)
+      }
+      const { userId } = auth
+
       const { dimensions, prompt, quantity } = c.req.valid("json")
       
-      // Ensure quantity is processed cleanly as an integer number
       const count = typeof quantity === 'string' ? parseInt(quantity, 10) : quantity
-
-      // Clean the dimension layout formatting if it uses '*'
       const formattedDimensions = dimensions.replace('*', 'x') 
-
       const structuralPrompt = `${prompt}, aspect ratio ${formattedDimensions}, high quality photorealistic`
 
-      // 1. Create an array of tasks to execute requests concurrently
       const generationTasks = Array.from({ length: count }).map(() => 
         axios({
           method: "POST",
@@ -34,25 +32,65 @@ const app = new Hono()
           data: { prompt: structuralPrompt },
           responseType: "arraybuffer"
         })
-      );
+      )
 
-      // 2. Fire all image requests at once to speed up performance
-      const responses = await Promise.all(generationTasks);
+      const responses = await Promise.all(generationTasks)
 
-      // 3. Convert all raw image payloads into individual base64 Data URLs
       const imageUrls = responses.map((res) => {
-        const base64Image = Buffer.from(res.data).toString('base64');
-        return `data:image/jpeg;base64,${base64Image}`;
-      });
+        const base64Image = Buffer.from(res.data).toString('base64')
+        return `data:image/jpeg;base64,${base64Image}`
+      })
 
-      // 4. Return the complete list back to Next.js
+      await Image.findOneAndUpdate(
+        { userId: userId },
+        { 
+          $push: { 
+            Images: { $each: imageUrls } 
+          } 
+        },
+        { upsert: true, new: true }
+      )
+
+      await User.findOneAndUpdate(
+  { userId: userId },
+  { $inc: { freeUsesCount: count } },
+  { new: true }
+)
       return c.json({
         success: true,
-        images: imageUrls // Sends back all 3 generated items array
-      }, 200);
+        images: imageUrls
+      }, 200)
 
     } catch (error: any) {
       console.error("Hono Multi-Image Generation Error:", error.message)   
+      return c.json({ success: false, error: error.message }, 500)
+    }
+  })
+  .get("/history", async (c) => {
+    try {
+      const auth = getAuth(c)
+      if (!auth || !auth.userId) {
+        return c.json({ success: false, error: "Unauthorized access vector" }, 401)
+      }
+      const { userId } = auth
+
+      const imageHistory = await Image.findOne({ userId })
+      if (!imageHistory) {
+        return c.json({
+          success: true,
+          images: [],
+          message: "No generation history found matching this workspace signature"
+        }, 200)
+      }
+
+      return c.json({
+        success: true,
+        images: imageHistory.Images,
+        message: "Image history array synchronized successfully"
+      }, 200)
+      
+    } catch (error: any) {
+      console.error("Hono History Ingestion Error:", error.message)
       return c.json({ success: false, error: error.message }, 500)
     }
   })
