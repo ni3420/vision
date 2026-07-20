@@ -49,19 +49,23 @@ const SideBar = () => {
 
   return (
     <aside className="hidden md:flex flex-col w-64 h-full bg-white dark:bg-[#0d0c16] border-r border-slate-200/60 dark:border-slate-800/60 shrink-0 transition-all duration-300 relative z-20">
-      <div className="h-16 flex items-center px-6 border-b border-slate-100 dark:border-slate-800/40 gap-3">
-        <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-400 flex items-center justify-center shadow-md shadow-indigo-500/20 dark:shadow-indigo-500/10">
-          <Sparkles className="h-4.5 w-4.5 text-white" />
-        </div>
-        <div>
-          <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white block leading-none">
-            Vision
-          </span>
-          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold uppercase tracking-wider mt-0.5 block">
-            Studio Engine
-          </span>
-        </div>
+      <div className="h-16 flex items-center px-6 border-b border-border/60 bg-card/50 backdrop-blur-md justify-between select-none relative z-50">
+  {/* Logo & Identity Cluster */}
+  <div className="flex items-center gap-3 group">
+    <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary via-indigo-500 to-violet-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 dark:shadow-none transition-transform duration-300 group-hover:scale-105 border border-white/10">
+      <span className="text-white text-base font-black tracking-tighter select-none">
+        V
+      </span>
+    </div>
+    <div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm font-bold tracking-tight text-foreground leading-none">
+          Vision
+        </span>
       </div>
+    </div>
+  </div>
+</div>
 
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
         {NAV_ITEMS.map((item) => {

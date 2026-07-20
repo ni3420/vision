@@ -18,7 +18,6 @@ const Page = () => {
       json: {
         email,
         name: user.fullName || "",
-        userId: user.id,
       },
     });
   }, [isLoaded, user, mutate]);

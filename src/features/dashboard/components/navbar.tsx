@@ -43,12 +43,6 @@ const NavBar = ({ onMenuClick }: NavBarProps) => {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-100/20 dark:border-indigo-500/10 shadow-sm">
-          <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400 animate-pulse" />
-          <span className="text-[11px] font-bold tracking-wide text-indigo-600 dark:text-indigo-400 uppercase">
-            Premium Pipeline
-          </span>
-        </div>
 
         <button
           type="button"
