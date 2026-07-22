@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { handle } from 'hono/vercel'
 import ImageRouter from "@/features/image/server/route"
 import authRouter from "@/features/auth/server/route"
+import musicRouter from "@/features/music/server/route"
 import { DB } from '@/db/db'
 import conversationRouter from "@/features/conversation/server/route"
 import { clerkMiddleware } from '@clerk/hono'
@@ -12,6 +13,7 @@ const app = new Hono().basePath('/api')
 .route("/auth", authRouter)
 .route("/image", ImageRouter)
 .route("/conversation",conversationRouter)
+.route("/music",musicRouter)
 
 DB()
   .then(() => {
