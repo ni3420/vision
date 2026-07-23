@@ -1,12 +1,13 @@
 "use client"
 
 import React, { useState } from "react"
-import { Music, Wand2, Loader2, Clock, Sparkles } from "lucide-react"
+import { Music, Wand2, Loader2, Clock } from "lucide-react"
+import { toast } from "sonner"
 import { useCreateMusic } from "../api/use-music-genrate"
 
 export const CreateMusic = () => {
   const [prompt, setPrompt] = useState("")
-  const [duration, setDuration] = useState(15)
+  const [duration, setDuration] = useState(8)
 
   const { mutate, isPending } = useCreateMusic()
 
@@ -23,7 +24,24 @@ export const CreateMusic = () => {
       },
       {
         onSuccess: () => {
+          toast.success("Audio track generated successfully!")
           setPrompt("")
+        },
+        onError: (error: any) => {
+          const status = error?.status || error?.response?.status
+          const errorMessage = error?.message || ""
+
+          if (
+            status === 403 || 
+            status === 504 || 
+            errorMessage.includes("403") || 
+            errorMessage.includes("504") ||
+            errorMessage.toLowerCase().includes("timeout")
+          ) {
+            toast.error("Treblo API server error. Please try again later.")
+          } else {
+            toast.error(errorMessage || "Failed to generate music track. Please try again.")
+          }
         },
       }
     )
@@ -73,7 +91,7 @@ export const CreateMusic = () => {
               Duration:
             </span>
             <div className="flex items-center gap-1">
-              {[15, 30, 60].map((sec) => (
+              {[8, 15, 20].map((sec) => (
                 <button
                   key={sec}
                   type="button"

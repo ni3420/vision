@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   {
     label: "Dashboard",
     icon: LayoutDashboard,
-    href: "/dashboard",
+    href: "/",
   },
   {
     label: "Image Generator",

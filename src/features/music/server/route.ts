@@ -10,18 +10,26 @@ import { GenerateMusicSchema } from "../schema"
 const TREBLO_API_KEY = process.env.TREBLO_API_KEY!
 const TREBLO_BASE_URL = "https://api.treblo.com/v1/generations"
 
+const trebloClient = axios.create({
+  baseURL: TREBLO_BASE_URL,
+  timeout: 10000,
+  headers: {
+    Authorization: `Bearer ${TREBLO_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+})
+
 const app = new Hono()
+
   // 1. FETCH MUSIC GENERATION HISTORY FOR CURRENT USER
   .get("/history", async (c) => {
     try {
       const auth = getAuth(c)
-      if (!auth || !auth.userId) {
+      if (!auth?.userId) {
         return c.json({ success: false, error: "Unauthorized access vector" }, 401)
       }
 
-      const history = await Music.find({ userId: auth.userId })
-        .sort({ createdAt: -1 })
-
+      const history = await Music.find({ userId: auth.userId }).sort({ createdAt: -1 })
       return c.json({ success: true, data: history }, 200)
     } catch (error: any) {
       console.error("Error fetching music history:", error.message)
@@ -33,25 +41,16 @@ const app = new Hono()
   .post("/generate", checkPlanLimit, zValidator("json", GenerateMusicSchema), async (c) => {
     try {
       const auth = getAuth(c)
-      if (!auth || !auth.userId) {
+      if (!auth?.userId) {
         return c.json({ success: false, error: "Unauthorized access vector" }, 401)
       }
 
       const { prompt, duration } = c.req.valid("json")
 
       // Step 1: Start Treblo music generation task
-      const startResponse = await axios.post(
-        `${TREBLO_BASE_URL}/v3`,
-        { prompt },
-        {
-          headers: {
-            Authorization: `Bearer ${TREBLO_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      )
+      const startResponse = await trebloClient.post("/v3", { prompt })
+      const taskId = startResponse.data?.task_id || startResponse.data?.id
 
-      const taskId = startResponse.data.task_id
       if (!taskId) {
         return c.json({ success: false, error: "Failed to initialize generation task" }, 500)
       }
@@ -59,24 +58,21 @@ const app = new Hono()
       // Step 2: Poll status until task completes or times out
       let completed = false
       let attempts = 0
-      const maxAttempts = 30 // ~2.5 minutes timeout limit (30 * 5s)
+      const maxAttempts = 20 // 20 * 5s = 100s max
 
       while (!completed && attempts < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, 5000))
         attempts++
 
-        const statusResponse = await axios.get(
-          `${TREBLO_BASE_URL}/status/${taskId}`,
-          {
-            headers: { Authorization: `Bearer ${TREBLO_API_KEY}` },
-          }
-        )
+        const statusResponse = await trebloClient.get(`/status/${taskId}`)
+        
+        // FIX: Treat response body directly as trimmed, uppercase string
+        const rawStatus = String(statusResponse.data).trim().toUpperCase()
+        console.log(`[Attempt ${attempts}/${maxAttempts}] Generation Status: ${rawStatus}`)
 
-        const status = statusResponse.data.status
-
-        if (status === "SUCCESS") {
+        if (rawStatus === "SUCCESS" || rawStatus === "COMPLETED") {
           completed = true
-        } else if (status === "FAILURE") {
+        } else if (rawStatus === "FAILED" || rawStatus === "FAILURE" || rawStatus === "ERROR") {
           throw new Error("Music generation engine encountered a failure")
         }
       }
@@ -86,14 +82,9 @@ const app = new Hono()
       }
 
       // Step 3: Fetch generated audio details
-      const resultResponse = await axios.get(
-        `${TREBLO_BASE_URL}/${taskId}`,
-        {
-          headers: { Authorization: `Bearer ${TREBLO_API_KEY}` },
-        }
-      )
+      const resultResponse = await trebloClient.get(`/${taskId}`)
+      const audioUrl = resultResponse.data?.song_paths?.[0] || resultResponse.data?.audio_url
 
-      const audioUrl = resultResponse.data.song_paths?.[0]
       if (!audioUrl) {
         return c.json({ success: false, error: "Audio file path was not returned" }, 500)
       }
