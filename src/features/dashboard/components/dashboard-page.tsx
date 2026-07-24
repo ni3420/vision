@@ -20,7 +20,7 @@ export const DashBoardPage = () => {
   const { data: conversationsResponse, isLoading: chatsLoading } = useGetConversations()
   const { data: musicResponse, isLoading: musicLoading } = useGetMusicHistory()
   const { data: imageResponse, isLoading: imageLoading } = useImageHistory()
-
+console.log(imageResponse,"imageResponsvi")
   const user = userResponse?.data
   const conversations = conversationsResponse?.data || []
   const musicTracks = musicResponse?.data || []

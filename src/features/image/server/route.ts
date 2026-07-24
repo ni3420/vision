@@ -16,8 +16,9 @@ const app = new Hono()
       const { userId } = auth
 
       const { dimensions, prompt, quantity } = c.req.valid("json")
+      const FreeCount=0
       
-      const count = typeof quantity === 'string' ? parseInt(quantity, 10) : quantity
+      const count = typeof quantity === 'string' ? parseInt(quantity, 4) : quantity
       const formattedDimensions = dimensions.replace('*', 'x') 
       const structuralPrompt = `${prompt}, aspect ratio ${formattedDimensions}, high quality photorealistic`
 
@@ -53,7 +54,7 @@ const app = new Hono()
 
       await User.findOneAndUpdate(
   { userId: userId },
-  { $inc: { freeUsesCount: count } },
+  { $inc: { freeUsesCount: FreeCount+1 } },
   { new: true }
 )
       return c.json({
