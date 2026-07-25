@@ -15,7 +15,7 @@ const ImageSchema = new Schema<IMAGE>({
     required: true,
     default: [],
   },
-});
+},{timestamps:true});
 
 const Image = mongoose.models.Image || mongoose.model<IMAGE>("Image", ImageSchema);
 

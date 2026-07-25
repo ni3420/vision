@@ -28,7 +28,7 @@ const MessageSchema = new Schema<MessageType>({
     type: Date,
     default: Date.now,
   },
-})
+},{timestamps: true})
 
 const ConversationSchema = new Schema<ConversationType>(
   {

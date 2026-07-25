@@ -20,11 +20,11 @@ export const DashBoardPage = () => {
   const { data: conversationsResponse, isLoading: chatsLoading } = useGetConversations()
   const { data: musicResponse, isLoading: musicLoading } = useGetMusicHistory()
   const { data: imageResponse, isLoading: imageLoading } = useImageHistory()
-console.log(imageResponse,"imageResponsvi")
+
   const user = userResponse?.data
   const conversations = conversationsResponse?.data || []
   const musicTracks = musicResponse?.data || []
-  const imageGenerations = imageResponse?.data || []
+  const imageGenerations = imageResponse?.images || []
 
   const isPremium = user?.plan === "PRO"
   const currentCount = user?.freeUsesCount ?? 0
@@ -75,23 +75,29 @@ console.log(imageResponse,"imageResponsvi")
       daysMap[key] = { day: dayName, Chat: 0, Image: 0, Music: 0 }
     }
 
+    const getSafeDateKey = (rawDate: any): string | null => {
+      if (!rawDate) return null
+      const parsedDate = new Date(rawDate)
+      return isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString().split("T")[0]
+    }
+
     conversations.forEach((item: any) => {
-      const dateKey = new Date(item.createdAt).toISOString().split("T")[0]
-      if (daysMap[dateKey]) {
+      const dateKey = getSafeDateKey(item?.createdAt)
+      if (dateKey && daysMap[dateKey]) {
         daysMap[dateKey].Chat += 1
       }
     })
 
     imageGenerations.forEach((item: any) => {
-      const dateKey = new Date(item.createdAt).toISOString().split("T")[0]
-      if (daysMap[dateKey]) {
+      const dateKey = getSafeDateKey(item?.createdAt || item?.timestamp)
+      if (dateKey && daysMap[dateKey]) {
         daysMap[dateKey].Image += 1
       }
     })
 
     musicTracks.forEach((item: any) => {
-      const dateKey = new Date(item.createdAt).toISOString().split("T")[0]
-      if (daysMap[dateKey]) {
+      const dateKey = getSafeDateKey(item?.createdAt || item?.timestamp)
+      if (dateKey && daysMap[dateKey]) {
         daysMap[dateKey].Music += 1
       }
     })
