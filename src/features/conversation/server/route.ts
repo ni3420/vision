@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
-import { getAuth } from "@hono/clerk-auth"
+import { getAuth } from "@clerk/hono"
 import { Conversation } from "@/models/conversation.models"
 import { CreateConversationSchema, PostMessageSchema } from "../schema"
 import { generateConversationReply } from "@/gemini/conversation-ai"

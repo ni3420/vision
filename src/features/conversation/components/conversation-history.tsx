@@ -18,7 +18,6 @@ export const ConversationHistory = ({
 }: ConversationHistoryProps) => {
   const { data: response, isLoading, isError } = useGetConversations()
   const { mutate: deleteSession, isPending: isDeleting } = useDeleteConversation()
-  console.log("ConversationHistory response:", response)
 
   const conversations = response?.data || []
 
