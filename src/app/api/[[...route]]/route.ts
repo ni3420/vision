@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'; // or 'edge' if using edge runtime
 import { Hono } from 'hono'
 import { handle } from 'hono/vercel'
 import ImageRouter from "@/features/image/server/route"
@@ -7,6 +9,7 @@ import subscriptionRouter from "@/features/Subscription/server/route"
 import { DB } from '@/db/db'
 import conversationRouter from "@/features/conversation/server/route"
 import { clerkMiddleware } from '@clerk/hono'
+
 
 
 const app = new Hono().basePath('/api')
