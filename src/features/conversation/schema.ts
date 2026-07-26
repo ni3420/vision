@@ -3,10 +3,10 @@ import { z } from "zod";
 // Base schema for individual message objects
 export const MessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"], {
-    required_error: "Message role is required",
+    message: "Message role is required",
   }),
   content: z.string().min(1, "Message content cannot be empty"),
-  createdAt: z.date().optional(),
+  createdAt: z.coerce.date().optional(),
 });
 
 // Main conversation document validation schema

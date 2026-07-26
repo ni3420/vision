@@ -5,6 +5,11 @@ import { Send, Bot, User, Loader2, Sparkles, MessageSquare } from "lucide-react"
 import { useGetConversation } from "../api/use-get-conversation"
 import { usePostMessage } from "../api/use-post-message"
 
+interface Message {
+  role: "user" | "assistant" | "system" | string
+  content: string
+}
+
 interface ShowConversationProps {
   sessionId: string
 }
@@ -17,7 +22,7 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
   const { mutate: sendMessage, isPending: isSending } = usePostMessage(sessionId)
 
   const conversation = response?.data
-  const messages = conversation?.messages || []
+  const messages: Message[] = conversation?.messages || []
 
   // Auto-scroll to bottom whenever new messages arrive
   useEffect(() => {
@@ -111,7 +116,7 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
             </p>
           </div>
         ) : (
-          messages.map((msg, index) => {
+          messages.map((msg: Message, index: number) => {
             const isUser = msg.role === "user"
 
             return (
