@@ -3,5 +3,10 @@ node_modules
 .git
 .gitignore
 Dockerfile
-.dockerignore
 README.md
+.env
+.env.local
+.env.development
+.env.production
+npm-debug.log*
+bun.lockb

@@ -14,19 +14,22 @@ import { clerkMiddleware } from '@clerk/hono'
 
 const app = new Hono().basePath('/api')
 .use("*",clerkMiddleware({publishableKey:process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY!}))
+.use("*", async (c, next) => {
+  try {
+    await DB();
+    return next();
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    return c.json({ error: "Database connection failed" }, 500);
+  }
+})
 .route("/auth", authRouter)
 .route("/image", ImageRouter)
 .route("/conversation",conversationRouter)
 .route("/music",musicRouter)
 .route("/stripe",subscriptionRouter)
 
-DB()
-  .then(() => {
-    console.log("connect the mongodb")
-  })
-  .catch((err) => {
-    console.error("error do not connected:", err)
-  })
+
 
 export const GET = handle(app)
 export const POST = handle(app)
