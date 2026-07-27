@@ -1,18 +1,18 @@
 "use client"
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
+import { toast } from "sonner";
 import { 
-  Sparkles, 
-  Image as ImageIcon, 
+  ImageIcon, 
   Video, 
   MessageSquare, 
   Music, 
-  Settings, 
-  ChevronLeft,
   LayoutDashboard,
-  LogOut
+  LogOut,
+  Loader2
 } from "lucide-react";
 import Plan from "@/components/plan";
 
@@ -46,26 +46,39 @@ const NAV_ITEMS = [
 
 const SideBar = () => {
   const pathname = usePathname();
+  const { signOut } = useClerk();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      setIsLoggingOut(true);
+      toast.loading("Signing out...", { id: "logout-toast" });
+      await signOut({ redirectUrl: "/sign-in" });
+    } catch {
+      toast.error("Failed to sign out. Please try again.", { id: "logout-toast" });
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <aside className="hidden md:flex flex-col w-64 h-full bg-white dark:bg-[#0d0c16] border-r border-slate-200/60 dark:border-slate-800/60 shrink-0 transition-all duration-300 relative z-20">
       <div className="h-16 flex items-center px-6 border-b border-border/60 bg-card/50 backdrop-blur-md justify-between select-none relative z-50">
-  {/* Logo & Identity Cluster */}
-  <div className="flex items-center gap-3 group">
-    <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary via-indigo-500 to-violet-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 dark:shadow-none transition-transform duration-300 group-hover:scale-105 border border-white/10">
-      <span className="text-white text-base font-black tracking-tighter select-none">
-        V
-      </span>
-    </div>
-    <div>
-      <div className="flex items-center gap-1.5">
-        <span className="text-sm font-bold tracking-tight text-foreground leading-none">
-          Vision
-        </span>
+        {/* Logo & Identity Cluster */}
+        <div className="flex items-center gap-3 group">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary via-indigo-500 to-violet-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 dark:shadow-none transition-transform duration-300 group-hover:scale-105 border border-white/10">
+            <span className="text-white text-base font-black tracking-tighter select-none">
+              V
+            </span>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold tracking-tight text-foreground leading-none">
+                Vision
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-</div>
 
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
@@ -92,26 +105,20 @@ const SideBar = () => {
       </nav>
 
       <div className="p-4 border-t border-slate-100 dark:border-slate-800/40 space-y-1.5">
-      <Plan/>
-
-        {/* <Link
-          href="/settings"
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 outline-none group ${
-            pathname === "/settings"
-              ? "bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400"
-              : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/40 hover:text-slate-900 dark:hover:text-slate-200"
-          }`}
-        >
-          <Settings className="h-4.5 w-4.5 text-slate-400 dark:text-slate-500 shrink-0" />
-          <span>Settings</span>
-        </Link> */}
+        <Plan />
 
         <button
           type="button"
-          className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold text-rose-500 dark:text-rose-400 hover:bg-rose-50/50 dark:hover:bg-rose-950/10 transition-all duration-200 outline-none text-left"
+          onClick={handleSignOut}
+          disabled={isLoggingOut}
+          className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold text-rose-500 dark:text-rose-400 hover:bg-rose-50/50 dark:hover:bg-rose-950/10 transition-all duration-200 outline-none text-left cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <LogOut className="h-4.5 w-4.5 shrink-0" />
-          <span>Sign Out</span>
+          {isLoggingOut ? (
+            <Loader2 className="h-4.5 w-4.5 shrink-0 animate-spin" />
+          ) : (
+            <LogOut className="h-4.5 w-4.5 shrink-0" />
+          )}
+          <span>{isLoggingOut ? "Signing Out..." : "Sign Out"}</span>
         </button>
       </div>
     </aside>
