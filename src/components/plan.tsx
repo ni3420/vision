@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React from "react"
 import { Sparkles, Zap, ShieldCheck, Crown, Loader2 } from "lucide-react"
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
 import { useCreateCheckout } from "@/features/Subscription/api/use-create-subscription"
@@ -66,7 +66,7 @@ export const Plan = ({ onUpgradeClick, user: providedUser }: PlanProps) => {
               Pro Plan Active
             </p>
             <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-              Unlimited Generations
+              No free-tier cap
             </p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export const Plan = ({ onUpgradeClick, user: providedUser }: PlanProps) => {
           />
         </div>
         <div className="flex justify-between items-center text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-          <span>{Math.max(0, maxCount - currentCount)} free frames remaining</span>
+          <span>{Math.max(0, maxCount - currentCount)} free generations remaining</span>
           {isLimitReached && (
             <span className="text-red-500 font-semibold">Limit Reached</span>
           )}

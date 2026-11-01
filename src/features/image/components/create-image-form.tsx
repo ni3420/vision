@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
-import { useForm, Controller } from "react-hook-form"
+import { useForm, useWatch, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import Input from "@/components/Input"
@@ -35,7 +35,7 @@ export const CreateImageForm = () => {
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false)
   const { mutate, data, isPending, isError } = useCreateImage()
 
-  const { control, watch } = useForm<ImageGenerationFormValues>({
+  const { control } = useForm<ImageGenerationFormValues>({
     resolver: zodResolver(imageGenerationSchema),
     defaultValues: {
       prompt: "",
@@ -44,8 +44,8 @@ export const CreateImageForm = () => {
     },
   })
 
-  const selectedDimensions = watch("dimensions")
-  const currentQuantity = watch("quantity")
+  const selectedDimensions = useWatch({ control, name: "dimensions" })
+  const currentQuantity = useWatch({ control, name: "quantity" })
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return

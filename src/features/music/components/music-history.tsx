@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef } from "react"
-import { Music, Play, Pause, Clock, Sparkles, Loader2, Volume2 } from "lucide-react"
+import { Play, Pause, Clock, Sparkles, Loader2, Volume2 } from "lucide-react"
 import { useGetMusicHistory } from "../api/use-get-music-history"
 
 export const MusicHistory = () => {
@@ -81,7 +81,7 @@ export const MusicHistory = () => {
             </p>
           </div>
         ) : (
-          tracks.map((track: any) => {
+          tracks.map((track) => {
             const isPlaying = playingId === track._id
 
             return (

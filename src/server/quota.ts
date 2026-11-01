@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { User } from "@/models/user.models";
 import { UsageLedger, type UsageKind } from "@/models/usage-ledger.models";
 
@@ -60,24 +61,24 @@ export async function reserveQuota(
     return { userId: options.userId, kind: options.kind, plan, ledgerId: null };
   }
 
-  let ledgerId: string | null = null;
-
-  if (options.idempotencyKey) {
-    try {
-      const ledger = await UsageLedger.create({
-        userId: options.userId,
-        kind: options.kind,
-        status: "reserved",
-        idempotencyKey: options.idempotencyKey,
-        reason: options.reason,
-      });
-      ledgerId = String(ledger._id);
-    } catch (error) {
-      if ((error as { code?: number }).code === 11000) {
-        throw new DuplicateRequestError();
-      }
-      throw error;
+  // Every charge gets a ledger row so refunds and audits work even when the
+  // caller does not supply an Idempotency-Key.
+  let ledgerId: string;
+  try {
+    const ledger = await UsageLedger.create({
+      userId: options.userId,
+      kind: options.kind,
+      status: "reserved",
+      idempotencyKey:
+        options.idempotencyKey?.trim() || `auto:${randomUUID()}`,
+      reason: options.reason,
+    });
+    ledgerId = String(ledger._id);
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      throw new DuplicateRequestError();
     }
+    throw error;
   }
 
   const charged = await User.findOneAndUpdate(
@@ -91,7 +92,7 @@ export async function reserveQuota(
   );
 
   if (!charged) {
-    if (ledgerId) await UsageLedger.deleteOne({ _id: ledgerId });
+    await UsageLedger.deleteOne({ _id: ledgerId });
     throw new QuotaExceededError();
   }
 

@@ -4,6 +4,10 @@ import { LoginSchema } from "../schema";
 import { User } from "@/models/user.models";
 import { getAuth } from "@clerk/hono";
 
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
 const app = new Hono()
 .post("/", zValidator("json", LoginSchema), async (c) => {
   try {
@@ -43,8 +47,11 @@ const app = new Hono()
       },
       200
     );
-  } catch (error: any) {
-    console.error("Auth syncing framework execution exception:", error.message);
+  } catch (error: unknown) {
+    console.error(
+      "Auth syncing framework execution exception:",
+      errorMessage(error, "unknown error")
+    );
     return c.json({ success: false, error: "Internal Server Error" }, 500);
   }
 })
@@ -65,8 +72,11 @@ const app = new Hono()
       success: true,
       data: user,
     }, 200);
-  } catch (error: any) {
-    console.error("Current user session synchronization exception:", error.message);
+  } catch (error: unknown) {
+    console.error(
+      "Current user session synchronization exception:",
+      errorMessage(error, "unknown error")
+    );
     return c.json({ success: false, error: "Internal Server Error" }, 500);
   }
 });

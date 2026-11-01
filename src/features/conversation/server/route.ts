@@ -196,8 +196,8 @@ const app = new Hono()
   // 4. APPEND A NEW USER MESSAGE + GET AI REPLY
   .post(
     "/message",
-    quotaGuard("conversation"),
     zValidator("json", PostMessageSchema),
+    quotaGuard("conversation"),
     async (c) => {
       try {
         const auth = getAuth(c);

@@ -91,7 +91,10 @@ export const ConversationHistory = ({
         ) : (
           conversations.map((item) => {
             const isActive = activeSessionId === item.sessionId
-            const firstUserMessage = item.messages.find((m: any) => m.role === "user")?.content || "Untitled Session"
+            const firstUserMessage =
+              item.messages.find(
+                (m: { role: string; content: string }) => m.role === "user"
+              )?.content || "Untitled Session"
             const messageCount = item.messages.length
 
             return (

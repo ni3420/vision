@@ -1,16 +1,15 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
-import { usePathname, useRouter } from "next/navigation"
+import React, { useState } from "react"
+import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { 
-  Menu, 
-  LayoutDashboard, 
-  ImageIcon, 
-  Video, 
-  MessageSquare, 
-  Music, 
-  Settings 
+import {
+  Menu,
+  LayoutDashboard,
+  ImageIcon,
+  Video,
+  MessageSquare,
+  Music,
 } from "lucide-react"
 
 import {
@@ -60,10 +59,6 @@ export function MobileSidebar() {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
 
-  useEffect(() => {
-    setOpen(false)
-  }, [pathname])
-
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
@@ -95,6 +90,7 @@ export function MobileSidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={() => setOpen(false)}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 outline-none group ${
                     isActive
                       ? "bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100/30 dark:border-indigo-500/10"
@@ -116,18 +112,6 @@ export function MobileSidebar() {
 
         <div className="p-4 border-t border-slate-100 dark:border-slate-800/40 space-y-1.5">
           <Plan />
-{/* 
-          <Link
-            href="/settings"
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 outline-none group ${
-              pathname === "/settings"
-                ? "bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400"
-                : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/40 hover:text-slate-900 dark:hover:text-slate-200"
-            }`}
-          >
-            <Settings className="h-4.5 w-4.5 shrink-0" />
-            <span>Settings</span>
-          </Link> */}
         </div>
       </SheetContent>
     </Sheet>

@@ -2,7 +2,6 @@
 
 import React, { useState } from "react"
 import { Music, Wand2, Loader2, Clock } from "lucide-react"
-import { toast } from "sonner"
 import { useCreateMusic } from "../api/use-music-genrate"
 
 export const CreateMusic = () => {
@@ -23,26 +22,7 @@ export const CreateMusic = () => {
         },
       },
       {
-        onSuccess: () => {
-          toast.success("Audio track generated successfully!")
-          setPrompt("")
-        },
-        onError: (error: any) => {
-          const status = error?.status || error?.response?.status
-          const errorMessage = error?.message || ""
-
-          if (
-            status === 403 || 
-            status === 504 || 
-            errorMessage.includes("403") || 
-            errorMessage.includes("504") ||
-            errorMessage.toLowerCase().includes("timeout")
-          ) {
-            toast.error("Treblo API server error. Please try again later.")
-          } else {
-            toast.error(errorMessage || "Failed to generate music track. Please try again.")
-          }
-        },
+        onSuccess: () => setPrompt(""),
       }
     )
   }

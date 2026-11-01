@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
 import { Send, Bot, User, Loader2, Sparkles, MessageSquare } from "lucide-react"
 import { useGetConversation } from "../api/use-get-conversation"
 import { usePostMessage } from "../api/use-post-message"
@@ -22,7 +22,10 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
   const { mutate: sendMessage, isPending: isSending } = usePostMessage(sessionId)
 
   const conversation = response?.data
-  const messages: Message[] = conversation?.messages || []
+  const messages = useMemo<Message[]>(
+    () => conversation?.messages ?? [],
+    [conversation]
+  )
 
   // Auto-scroll to bottom whenever new messages arrive
   useEffect(() => {
@@ -34,17 +37,19 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
     if (!content.trim() || isSending) return
 
     const messageText = content.trim()
-    setContent("")
 
-    sendMessage({
-      json: {
-        sessionId,
-        message: {
-          role: "user",
-          content: messageText,
+    sendMessage(
+      {
+        json: {
+          sessionId,
+          message: {
+            role: "user",
+            content: messageText,
+          },
         },
       },
-    })
+      { onSuccess: () => setContent("") }
+    )
   }
 
   if (isLoading) {
@@ -101,7 +106,7 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
 
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          <span>Gemini 2.5 Flash</span>
+          <span>AI assistant</span>
         </div>
       </div>
 

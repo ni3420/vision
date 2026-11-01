@@ -1,543 +1,652 @@
 # AGENTS.md — Vision
 
-> Single source of truth for humans and AI agents working on this repository.
-> Read this file completely before changing code. `CLAUDE.md` points here.
+> Single source of truth for humans and AI coding agents working in this repository.
+> **Verified against the checkout on 2026-11-01.** Every version, path, route, and
+> provider name below was read from the code, not assumed. When this file and the code
+> disagree, the code wins — then fix this file in the same change.
 >
-> Last verified: 2026-11-01 · commit `233c928` · branch `master` (tracks `origin/main`)
+> If `CLAUDE.md` or another agent guide exists, it must point here instead of
+> duplicating rules.
 
 ---
 
 ## 0. Agent contract
 
-1. Inspect the repository before editing. Never assume the README is accurate; this file wins.
-2. Next.js here is **16.2.10** with breaking changes. Read the relevant guide in
-   `node_modules/next/dist/docs/` before writing routing, layout, or caching code.
-3. For design or spec-level changes: update this file first, show the UI (preview/screenshot)
-   second, edit code third. Only touch the surface the request names.
-4. Do not deploy, do not spend paid provider credits, do not create external accounts,
-   and do not paste secrets into chat or logs.
-5. Never invent a provider endpoint, model name, price, or quota. Verify against the
-   provider's current docs and record the source in the decision log.
-6. No fake success states, no dead buttons presented as working features, no TODO buttons.
+Read this file before changing code. Then:
+
+1. **Inspect before editing.** Read `package.json`, `tsconfig.json`,
+   `src/app`, `src/features`, `src/server`, `src/models`, `src/proxy.ts`, and
+   `.env.example`. Never assume this document perfectly describes a newer checkout.
+2. **Work in small, reviewable slices.** One feature or defect per change. Explain risky
+   changes before making them.
+3. **Preserve what works.** The auth flow, quota ledger, storage abstraction, provider
+   adapters, and Stripe webhook all work in their current shape. Refactor them only with a
+   concrete reason and a test.
+4. **Never fake success.** No invented provider endpoints, model names, quotas, prices, or
+   progress bars. If a capability is not configured, label it honestly.
+5. **Never expose secrets.** No keys, signed URLs, private object keys, prompts, or user
+   content in browser bundles, logs, commits, or screenshots.
+6. **Run the gates** before reporting done (§10.5).
+7. **No deployment, paid provider spend, external account creation, or production data
+   changes** unless the user explicitly asks.
+8. **If a request conflicts with this guide**, follow the explicit user request and add a
+   row to the §14 decision log so the change is intentional.
 
 ---
 
-## 1. Mission and internship target
+## 1. Verified current state
 
-Vision is a multi-modal AI creation workspace: **image, chat, music, and later video**.
-The goal is not "more models"; it is one coherent product a recruiter can evaluate in five
-minutes: sign up, create something, see history, hit the free limit, upgrade, and keep creating.
+### 1.1 Stack (read from `package.json` and configs)
 
-**Target state (internship-ready):** a deployed app with working generation paths, honest
-free-tier limits, real error/empty/loading states, a clean README with screenshots, and a
-repeatable 5-minute demo. Video is explicitly out of scope until a paid provider is configured.
-
-Success means: a stranger can complete the demo script in §11.1 without hitting a bug or a
-misleading claim.
-
----
-
-## 2. Current state (verified on the commit above)
-
-### 2.1 Stack
-
-| Layer | Choice |
-|---|---|
-| Framework | Next.js 16.2.10 (App Router, Turbopack, `src/app`) |
-| UI | React 19.2.4, Tailwind v4, `@base-ui/react`, shadcn-style primitives, lucide icons |
-| API | Hono 4 mounted at `/api` via `hono/vercel` (`src/app/api/[[...route]]/route.ts`) |
-| Auth | Clerk v7 (`@clerk/nextjs`, `@clerk/hono`); Clerk `userId` is the Mongo key |
-| DB | MongoDB via Mongoose 9 (`src/db/db.ts`, `src/models/*`) |
-| Data client | TanStack Query + Hono typed `hc` client (`src/lib/client.ts`) |
-| Payments | Stripe Checkout + webhook (`src/features/Subscription/server/route.ts`) |
-| AI | Provider adapters in `src/server/ai/` (Cloudflare image, Groq/Gemini chat, Treblo music, local mock mode) |
-| Storage | `src/server/storage.ts` (S3/R2 driver, local dev driver); `Asset` + `UsageLedger` models |
-| Package manager | Bun (`bun.lock`); scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `smoke` |
-| Local database | `docker compose up -d` → `mongo:7` on `127.0.0.1:27017`, volume `mongo-data`, `DB_URL=mongodb://127.0.0.1:27017/vision` |
-
-### 2.2 Feature status
-
-| Area | Route | Status | Reality |
-|---|---|---|---|
-| Dashboard | `/` | Works | Analytics console reading 4 queries; image rows now carry `createdAt` |
-| Image studio | `/image-generator` | Works (mock-capable) | Cloudflare JSON parsed and normalized with sharp; bytes in object storage; 1–2 images per request |
-| Video studio | `/video-generator` | Placeholder | No provider and no free API; page states that plainly and links to images. Nav shows a "Soon" badge; no release dates |
-| Conversation | `/conversation` | Works (mock-capable) | Groq → Gemini fallback; history capped at 12 turns; no streaming |
-| Music studio | `/music-generator` | Works (mock-capable) | Treblo polling; bytes in object storage; local WAV mock |
-| Billing | `/api/stripe` | Works | Checkout + 3 webhook events; no idempotency (D8); no customer portal |
-| Auth sync | `/api/auth` | Works | `UserSync` in the dashboard layout creates/reads the Mongo user on every protected page |
-| Assets | `/api/assets/:key` | Works | Private objects, ownership-prefixed keys, presigned/S3 or local dev driver |
-
-### 2.3 Defect register (do not "discover" these twice)
-
-Fixed on 2026-11-01:
-
-- **D1 — nested document shell.** `(dashboard)/layout.tsx` now renders only the dashboard shell;
-  `<html>/<body>` exist only in `src/app/layout.tsx`.
-- **D2 — invalid model name.** `src/gemini/*` deleted. Chat lives in `src/server/ai/chat.ts`:
-  Groq `llama-3.3-70b-versatile` (verified in Groq's production model list), Gemini
-  `gemini-2.5-flash` fallback, override with `GROQ_MODEL` / `GEMINI_MODEL`.
-- **D3 — wrong image response type.** `src/server/ai/image.ts` parses Cloudflare's JSON
-  (`result.image` and compatible shapes) as well as raw binary responses.
-- **D4 — unbounded Mongo documents.** `src/models/image.models.ts` deleted. Bytes go to
-  `src/server/storage.ts`; Mongo stores `Asset` metadata only. Caps: 64–1536px per side,
-  1–2 images per request.
-- **D5 — quota not transactional.** `src/server/quota.ts` reserves atomically before the
-  provider call, settles on success, and refunds on 4xx/5xx or a thrown error.
-- **D6 — chat counted per message.** One unit per successful request across all modalities,
-  including a session's initial message; an empty session creation is free.
-- **D11 — image chart never counts images.** Image responses are objects with `id`, `url`,
-  `width`, `height`, `prompt`, `provider`, `model`, and `createdAt`.
-- **D9 — misleading README.** Rewritten 2026-11-01: real stack (Cloudflare/Groq/Gemini/Treblo),
-  real routes, current tree, env table, mock-mode rules, honest limitations. The live-demo and
-  OpenAI claims are gone; the deployment URL is marked as possibly lagging the default branch.
-- **D10 — stale product claims.** Video page rewritten 2026-11-01: states that no provider is
-  configured, removes "4K", motion controls, GPU priority, and the past Q3 2026 date, and links
-  to the image generator.
-
-Still open:
-
-- **D7 — no rate limits.** No per-user or per-IP limits on generation, upload, auth, or webhook.
-- **D8 — no webhook idempotency.** `src/features/Subscription/server/route.ts:85` applies events
-  without recording event IDs; duplicate deliveries are harmless for `plan: "PRO"` but unsafe
-  once credits/periods exist.
-- **D12 — dev-only origin in production config.** `next.config.ts:6` hardcodes an ngrok host.
-
-Gates after the 2026-11-01 fixes: `tsc --noEmit` clean, `bun run build` succeeds, and lint is
-**26 problems (15 errors, 11 warnings)** — all pre-existing. Compare counts, never expect zero.
-
----
-
-## 3. Target architecture
-
-### 3.1 Shape
-
-```text
-Browser (Next.js App Router)
-  ├── (dashboard) pages: composer + result canvas + history
-  ├── TanStack Query hooks (features/*/api)
-  └── Hono typed client (src/lib/client.ts)
-            |
-            v
-Hono API at /api  (Node runtime, force-dynamic)
-  ├── clerkMiddleware → auth context
-  ├── DB() connection guard
-  ├── quota.reserve() → provider call → quota.settle()/refund()
-  ├── provider adapters (server-only)
-  └── Mongo: users, conversations, assets, jobs
-            |
-            v
-Providers: Cloudflare (image), Groq (chat), Treblo (music)
-Storage: R2/S3 for bytes; Mongo stores metadata + object keys
-```
-
-Rules:
-- The browser never calls a provider directly and never sees a provider key.
-- Every provider call goes through an adapter with timeout, retry policy, and error mapping.
-- Long operations (video, batch) must become jobs, not a single request lifecycle.
-
-### 3.2 Folder contract
-
-Keep feature slices; do not flatten them into `components/` and `lib/`.
-
-```text
-src/
-  app/(dashboard)/<page>/page.tsx        thin page: layout + feature component
-  app/api/[[...route]]/route.ts          Hono mount only (no business logic)
-  features/<feature>/
-    api/                                 TanStack Query hooks
-    components/                          client UI for this feature
-    server/route.ts                      Hono sub-router
-    schema.ts                            Zod request contracts
-  server/                                shared server-only infrastructure (new)
-    ai/provider.ts                       adapter interfaces
-    ai/cloudflare-image.ts
-    ai/groq-chat.ts
-    ai/treblo-music.ts
-    quota.ts                             atomic reserve/settle/refund
-    storage.ts                           presign/put/delete (R2 or S3)
-  models/                                Mongoose schemas
-  lib/                                   client, stripe, utils
-  middleware/                            Hono middleware
-```
-
-Rules:
-- One feature per pull request. Shared code moves to `src/server/*` only when a second
-  feature needs it.
-- `route.ts` files validate, authorize, check quota, call a service, and map errors. No prompts,
-  no provider URLs, no retry loops inline.
-- Zod schemas are the source of truth for request types; infer, do not duplicate.
-
-### 3.3 API surface
-
-| Method + path | Purpose | Auth |
+| Layer | Actual | Notes |
 |---|---|---|
-| `POST /api/auth` | Create/read Mongo user | Clerk |
-| `GET /api/auth/current` | Current user + quota | Clerk |
-| `POST /api/image` | Generate 1–4 images | Clerk + quota |
-| `GET /api/image/history` | Paginated image metadata | Clerk |
-| `POST /api/conversation/session` | Create session + first reply | Clerk + quota |
-| `POST /api/conversation/message` | Append message + reply | Clerk + quota |
-| `GET /api/conversation/all` | List sessions (paginate) | Clerk |
-| `GET /api/conversation/:sessionId` | Session messages | Clerk |
-| `DELETE /api/conversation/:sessionId` | Delete session | Clerk |
-| `POST /api/music/generate` | Start music generation | Clerk + quota |
-| `GET /api/music/history` | List tracks | Clerk |
-| `POST /api/stripe` | Create checkout session | Clerk |
-| `POST /api/stripe/webhook` | Stripe events | Stripe signature only |
-| `POST /api/assets/upload-url` | Presigned upload (future) | Clerk |
-| `POST /api/video/generate` | Future, PRO only | Clerk + paid credit |
+| Framework | Next.js `16.2.10`, App Router, `src/app` | Turbopack dev; `output: "standalone"` |
+| UI | React `19.2.4`, Tailwind CSS v4, shadcn/ui **`base-nova`** on **Base UI** (`@base-ui/react`), Lucide | `components.json` confirms Base UI, not Radix |
+| API | Hono `4.12` mounted at `/api` via `src/app/api/[[...route]]/route.ts` | Node runtime, `force-dynamic` |
+| API client | `hc<AppType>` from `hono/client` in `src/lib/client.ts` | End-to-end typed routes |
+| Server state | **TanStack Query `5.101`** (`src/providers/providers.tsx`) | Single cache; see §9 |
+| Client state | Local React state; **Zustand is not installed** | Add only for real shared UI state |
+| Database | MongoDB + Mongoose `9.7` | Models in `src/models` |
+| Auth | Clerk `@clerk/nextjs` v7 + `@clerk/hono` | `src/proxy.ts` protects everything except `/auth(.*)` and `/api/stripe(.*)` |
+| Payments | Stripe `22.3` Checkout + webhook | `src/features/Subscription/server/route.ts` |
+| Storage | Local filesystem or S3-compatible (`@aws-sdk/client-s3` v3) | `STORAGE_DRIVER=local \| s3` |
+| Image AI | Cloudflare Workers AI `@cf/black-forest-labs/flux-1-schnell` | `src/server/ai/image.ts` |
+| Chat AI | Groq `llama-3.3-70b-versatile`, Gemini `gemini-2.5-flash` fallback | `src/server/ai/chat.ts` |
+| Music AI | Treblo v3 (`https://api.treblo.com/v1/generations`) | `src/server/ai/music.ts` |
+| Video | **Not implemented** | Honest "Not available yet" page |
+| Tests | `bun test` (Bun built-in runner) + `bun run smoke` | No Vitest/Jest; do not add one without a reason |
+| Package manager | Bun (`bun.lock`) | Do not introduce npm/pnpm/yarn lockfiles |
+| Fonts | Geist Sans / Geist Mono via `next/font/google` | Mapped to `--font-sans` in `globals.css` |
 
-Response envelope: `{ success: true, data }` or `{ success: false, error: { code, message } }`.
-Use stable machine codes (`QUOTA_EXCEEDED`, `PROVIDER_TIMEOUT`, `INVALID_INPUT`) and plain,
-human-readable messages.
+### 1.2 Gate baseline
 
-### 3.4 Data model
+| Gate | Command | Baseline 2026-11-01 |
+|---|---|---|
+| Types | `bun run typecheck` | **PASS** |
+| Lint | `bun run lint` | **PASS — 0 problems** |
+| Unit tests | `bun run test` | **PASS — 33 tests / 5 files** |
+| Adapters | `bun run smoke` | **PASS** (forces mock mode) |
+| Build | `bun run build` | **PASS** — compiled in 59s, 8 routes (2026-11-01) |
 
-```text
-users:        userId (unique), email, name, plan (FREE|PRO), freeUsesCount,
-              stripeCustomerId, createdAt
-conversations: userId, sessionId (unique), messages[{role, content, createdAt}], timestamps
-assets:       userId, kind (IMAGE|MUSIC|VIDEO), objectKey, mime, bytes, width, height,
-              durationSec, prompt, provider, model, visibility, createdAt, deletedAt
-jobs:         userId, kind, status (QUEUED|RUNNING|SUCCEEDED|FAILED), providerTaskId,
-              input, errorCode, creditsReserved, timestamps
-usage_ledger: userId, kind, amount (+/-), reason, idempotencyKey (unique), createdAt
-```
+One non-blocking Turbopack warning remains for the runtime-computed local storage root
+(`src/server/storage.ts`); it is intentional, not an error.
 
-Rules:
-- Bytes live in object storage, never in Mongo. Mongo stores keys and metadata.
-- Index `userId` on every user-owned collection; index `sessionId` uniquely.
-- Use integer credits, not floats. Ledger entries are append-only.
-- Never trust an owner ID from the request. Derive it from Clerk.
+`bun run build` needs a `.env.local`. The committed `.env.example` documents every variable.
+With placeholder Clerk/Stripe/provider values the app builds, but **browser flows are not
+verifiable** (Clerk redirects, Mongo unreachable, providers unconfigured). State that
+limitation explicitly instead of claiming a working UI flow.
+
+### 1.3 Known limitations (do not paper over)
+
+- No rate limiting on generation, upload, or auth endpoints.
+- No Stripe event-idempotency table; replayed webhooks re-apply the same plan write.
+- History endpoints use a capped `limit` (60 images / 50 tracks), not cursor pagination.
+- Chat is request/response; no streaming, stop button, or token usage.
+- No async job queue: one HTTP request holds the provider call.
+- `Asset.kind` allows `"music"`, but music tracks live in the `Music` collection.
+- `README.md` and this file are the only project documentation; there is no `docs/`.
 
 ---
 
-## 4. Provider decisions (free-first)
+## 2. Product surfaces
 
-### 4.1 Chosen providers
+Vision is a multimodal creative workspace: **generate an image, talk to an assistant, make
+a track, see it in history, understand the free limit, test the upgrade path.** Every
+surface must be usable with a keyboard, readable in light and dark mode, and honest about
+state.
 
-| Modality | Primary | Free allowance | Fallback | Why |
-|---|---|---|---|---|
-| Image | Cloudflare Workers AI `flux-1-schnell` | 10,000 neurons/day ≈ 520 images at 1024² | Pollinations `flux.1-schnell` (one-time grant) | Already wired; zero retention; ~$0.0002/image after free |
-| Chat | Groq (`https://api.groq.com/openai/v1`) | ~30 RPM, 1,000 RPD, 8K TPM, 200K TPD | Cloudflare text models | Free, fast, no training on inputs; OpenAI-compatible |
-| Music | Treblo (existing) | Trial, then $11/mo ≈ 200 songs | Stability Stable Audio (25 one-time credits ≈ 3 tracks) | Already integrated; ~$0.055/song |
-| Video | None | — | Pollinations `wan-2.2-fast` (~$0.05/5s, paid) when PRO | No free video API exists |
+| Route | Surface | Purpose | Real states |
+|---|---|---|---|
+| `/` | Dashboard | Counts, 7-day activity, workload split, plan meter, quick actions | loading skeleton, empty, error + retry |
+| `/image-generator` | Image Studio | Prompt composer, size presets, 1–2 variations, result grid, history tab | idle, pending, success, quota (403), provider error, empty history |
+| `/conversation` | Chat | Session list, message thread, composer, delete session | empty, pending reply, error, no session |
+| `/music-generator` | Music Studio | Prompt, 8/15/20 s duration, track player, history | idle, synthesizing, success, quota, provider error |
+| `/video-generator` | Video | Honest "not available yet" explanation with links to working tools | static |
+| `/auth/sign-in`, `/auth/sign-up` | Auth | Clerk-hosted components | Clerk-managed |
 
-**Gemini rule:** the free tier lets Google use prompts/outputs to improve products. Use it only
-for local development with synthetic data. Do not route real user prompts through it. If chat
-quality requires Gemini in production, use the paid tier and record the decision here.
+The sidebar (`src/features/dashboard/components/sidebar.tsx`) and mobile sheet
+(`mobile-sidebar.tsx`) must stay in sync. Never add a nav item without a real page.
 
-**Do not use:** OpenRouter free (50 RPD without $10 lifetime), Hugging Face free (zero monthly
-credits), Together FLUX free (expired promo), ModelScope Wan (API inference disabled),
-Pollinations video/music (paid-only), Gemini free image (paid-only).
+### 2.1 Product principles
 
-### 4.2 Adapter contract
+- The canvas/result is the hero; controls support it and never compete with it.
+- Progressive disclosure: common controls first, advanced settings only when the provider
+  supports them.
+- Preserve user input on failure. Never clear a prompt or draft because a request failed.
+- Show quota impact before a charged action when it is known.
+- Empty, loading, success, partial-success, error, quota, and offline states are part of
+  "done" — not polish.
+- Accessibility is part of done: labels, focus order, contrast, reduced motion, alt text.
 
-Implemented in `src/server/ai/` (`types.ts`, `runtime.ts`, `image.ts`, `chat.ts`, `music.ts`):
+---
+
+## 3. Architecture
+
+```text
+Browser (Next.js App Router, client components)
+  ├── Dashboard shell: sidebar + navbar + <main>
+  ├── Feature pages: image / conversation / music / video
+  ├── Feature hooks: TanStack Query + typed hc client
+  └── Clerk client session
+          │  fetch("/api/*") with Clerk cookies + Idempotency-Key on charged mutations
+          ▼
+Hono app (src/app/api/[[...route]]/route.ts)
+  ├── clerkMiddleware (publishable key)
+  ├── DB() connection guard on every request
+  ├── Routers: auth, image, conversation, dashboard, music, assets, stripe
+  ├── quotaGuard (reserve → handler → settle/refund)
+  ├── Zod validation (@hono/zod-validator)
+  └── Provider adapters (src/server/ai/*)
+          │
+          ├── MongoDB: users, assets, conversations, music, usageLedger
+          ├── Storage: local .data/uploads or S3-compatible bucket
+          └── Providers: Cloudflare, Groq, Gemini, Treblo
+```
+
+**Ownership boundaries**
+
+- MongoDB is the source of truth for users, plans, quota counters, ledger, conversations,
+  asset metadata, and music metadata.
+- Storage holds bytes only. MongoDB stores object keys, MIME, size, dimensions.
+- The server is authoritative for auth, ownership, quota, plan, storage keys, and provider
+  calls. The browser only displays what the server returns.
+- The browser may hold transient UI state (form drafts, active tab, playing track).
+
+**Request lifecycle for a charged generation**
+
+1. Proxy redirects anonymous users to Clerk (`/api/stripe/*` is public for webhooks).
+2. Hono validates the JSON body with Zod (`400` on failure, nothing charged).
+3. `quotaGuard` resolves `auth.userId` from Clerk and reserves quota atomically.
+4. The feature service calls the provider adapter.
+5. Output is written to storage, metadata to MongoDB.
+6. Middleware settles on `2xx`; on a thrown error or `>= 400` response it refunds and
+   re-throws/returns.
+7. The hook invalidates the relevant query keys and shows a toast.
+
+---
+
+## 4. API contract
+
+### 4.1 Mount and middleware
+
+`src/app/api/[[...route]]/route.ts` mounts every router under `/api`. It applies
+`clerkMiddleware` and the `DB()` guard to `*`. Do not create a second Hono app or bypass
+this mount.
+
+### 4.2 Envelope
+
+There are two shapes today; preserve them rather than inventing a third.
 
 ```ts
-generateImage(input: { prompt; width; height }): Promise<{
-  bytes: Buffer; mime; width; height; provider; model; mock;
-}>;
-
-generateChatReply(history: ChatMessage[], message: string): Promise<{
-  text; provider; model; mock;
-}>;
-
-generateMusic(input: { prompt; durationSec }): Promise<{
-  bytes: Buffer; mime; durationSec; provider; model; mock;
-}>;
+type Success = { success: true; data?: unknown; images?: unknown[]; mock?: boolean; ... };
+type Failure = { success: false; code: string; error: string };
 ```
 
-Mode resolution (`resolveMode`) is per modality: `AI_MODE=mock` forces mocks, `AI_MODE=live`
-always calls the provider and fails loudly when unconfigured, and `auto` uses a live provider
-when the key looks real, otherwise mocks outside production. A mock result sets `mock: true`
-in the HTTP response so the UI can label it; production never falls back to mock silently.
+Rules:
 
-Adapters own: timeouts (image 60s, music polling 20×5s), provider error → stable error code
-mapping, and output normalization (sharp resize to the requested dimensions).
+- `success: false` always carries a stable `code` and a human-readable `error`.
+- Never return raw provider payloads, stack traces, or secrets.
+- Keep existing field names (`images`, `data`, `url`, `mock`) stable — the typed client and
+  React Query hooks infer them from `AppType`.
 
-### 4.3 Cost and quota math
+### 4.3 Routes
 
-- Cloudflare: 4.80 neurons per 512×512 tile. 1024×1024 = 4 tiles = 19.2 neurons.
-  `10,000 / 19.2 ≈ 520` free images/day; paid `19.2 × $0.011/1000 ≈ $0.00021`/image.
-- Groq: free within rate limits; budget 20 messages/user/day.
-- Treblo: ~$0.055/song; one free track per FREE user.
-- Worst-case cost of a FREE signup: 5 images ($0) + 20 messages ($0) + 1 song (~$0.055).
-- Video, if added: ~$0.05 per 5s clip; never free.
-
-### 4.4 Environment variables
-
-Names only; never commit values. Add a tracked `.env.example` with placeholders.
-
-```text
-DB_URL
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-CLERK_SECRET_KEY
-NEXT_PUBLIC_APP_URL
-
-AI_MODE                       # auto | live | mock
-CLOUDFARE_URL                 # legacy full Workers AI URL (supported)
-CLOUDFARE_API_KEY             # legacy token name (supported)
-CLOUDFLARE_ACCOUNT_ID         # preferred; builds the flux-1-schnell URL
-CLOUDFLARE_API_TOKEN          # preferred token name
-GROQ_API_KEY
-GROQ_MODEL                    # default llama-3.3-70b-versatile
-GEMINI_API_KEY                # fallback chat provider (dev/synthetic data only)
-GEMINI_MODEL                  # default gemini-2.5-flash
-TREBLO_API_KEY
-
-STORAGE_DRIVER                # local | s3
-LOCAL_STORAGE_DIR             # default <cwd>/.data/uploads
-S3_BUCKET
-S3_REGION
-S3_ENDPOINT
-S3_ACCESS_KEY_ID
-S3_SECRET_ACCESS_KEY
-S3_FORCE_PATH_STYLE
-
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
-NEXT_PUBLIC_STRIPE_PRO_PRICE_ID
-```
-
-`.env.example` tracks every name with empty values.
-
----
-
-## 5. Quota and billing rules
-
-1. FREE = **5 successful requests total** across image, chat, and music. One unit is one image
-   request (regardless of the 1–2 image count), one assistant reply, or one music track.
-   Creating an empty chat session is free.
-2. Reserve the unit **before** the provider call with an atomic Mongo update
-   (`findOneAndUpdate({ userId, plan: { $ne: "PRO" }, freeUsesCount: { $lt: 5 } }, { $inc: ... })`).
-   If no document matches, return 403 `QUOTA_EXCEEDED`. Implemented in `src/server/quota.ts`.
-3. Settle on success. Refund when the handler returns >= 400 or throws (`quotaGuard`) or when
-   the wrapped work throws (`runWithQuota`). `UsageLedger` records `reserved`/`settled`/`refunded`.
-4. Accept an optional `Idempotency-Key` header on generation routes; a unique sparse index on
-   `UsageLedger.idempotencyKey` prevents a second charge. A replayed key returns 409
-   `DUPLICATE_REQUEST` (the client generates one key per user action). Returning the cached
-   result is still a P1 improvement.
-5. PRO is a fair-use cap (for example 200 generations/month), not "unlimited". Never display
-   "Unlimited" unless the provider contract supports it.
-6. Show the remaining count before the user runs an expensive action.
-
----
-
-## 6. Asset storage rules
-
-- Image/audio bytes live in R2/S3 (`STORAGE_DRIVER=s3`) or `.data/uploads` in development.
-  Mongo stores `Asset` metadata only: `objectKey`, MIME, byte size, dimensions/duration,
-  provider, model, prompt, and timestamps.
-- Generate opaque keys (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`); never use user
-  filenames as paths. `isOwnedKey` rejects traversal and cross-user prefixes.
-- S3 objects are served through short-lived presigned URLs; the local driver serves
-  `/api/assets/:key` behind Clerk auth. Objects stay private by default.
-- Keep data URLs only for in-flight previews in the browser; never persist them.
-- Caps stay in force until model/provider limits justify more: 64–1536px per side and 1–2
-  images per request (`src/features/image/schema.ts`).
-
----
-
-## 7. UI/UX direction and references
-
-### 7.1 What to borrow
-
-| Reference | Borrow | Do not copy |
-|---|---|---|
-| [Krea](https://www.krea.ai/) | One composer + model/quality selector; results on a canvas; recent work visible | Model marketplace sprawl, branding, copy |
-| [Photoroom](https://www.photoroom.com/) | Upload → remove background → scene → batch; before/after; product-identity warning | Its exact layouts or marketing text |
-| [Ideogram](https://ideogram.ai/) | Style presets, aspect ratios, typography emphasis; remix from a result | Its brand assets |
-| [Canva](https://www.canva.com/ai-image-generator/) | Platform size presets and export flows; editable text, not pixel text | Full editor scope |
-| [Leonardo](https://leonardo.ai/) | Collapsible advanced controls (seed, references, count); asset library | Its gallery density |
-| [Adobe Firefly](https://www.adobe.com/products/firefly.html) | Cost shown before running; provenance/credits transparency | Enterprise-only controls |
-| [Runway](https://runwayml.com/) | Job status, retry, project context | Video scope before image/chat are solid |
-
-### 7.2 Current design tokens
-
-Keep the existing system: indigo primary (`oklch(0.49 0.22 260)`), `--radius: 0.75rem`,
-light/dark via `.dark`, cards with `rounded-3xl`, sidebar 64 (`w-64`) + 16 (`h-16`) header,
-Tailwind v4 tokens in `src/app/globals.css`. Prefer tokens over hardcoded slate/indigo classes;
-the dashboard currently mixes both.
-
-### 7.3 Copy rules
-
-Plain language only. Replace jargon before adding features:
-
-| Current | Use |
-|---|---|
-| "Unauthorized access vector" | "Please sign in to continue." |
-| "Exceeded structural trial provisioning allocation boundaries…" | "You've used all 5 free generations. Upgrade to keep creating." |
-| "Neural Image Studio" / "Generate Studio" | "Image studio" / "Create" |
-| "execution frames" / "render history" | "generations" / "History" |
-| "Engine Status: Operational" | Remove unless backed by a real health check |
-
-No claim may exceed the configured provider. If video is not configured, say "Not available yet".
-
-### 7.4 Required states
-
-Every generation surface needs: idle with example prompt, loading with progress text,
-success with preview + metadata + download, failure with retry and a stable error message,
-quota-reached with upgrade CTA, empty history, and unauthenticated redirect.
-Keyboard focus must be visible; images need alt text; controls need labels.
-
----
-
-## 8. Decision log
-
-| ID | Decision | Why | Revisit when |
+| Method | Route | Auth | Notes |
 |---|---|---|---|
-| A1 | Clerk for auth; Clerk `userId` is the DB key | Already integrated; works inside Hono | Never, unless migrating providers |
-| A2 | MongoDB + Mongoose | Existing data layer; no migration budget | Document size or query needs outgrow it |
-| A3 | Hono mounted at `/api` with typed `hc` client | Shared types, single mount point | Adding streaming or edge-only routes |
-| A4 | Feature-slice folders | Keeps each modality isolated | A slice exceeds ~15 files |
-| A5 | Free-first provider routing (Cloudflare/Groq/Treblo) | Zero/low cost for first use; no data training | Paid tier or quality complaints |
-| A6 | 5 free generations, shared across modalities | Simple, predictable cost cap | Metrics show it blocks activation |
-| A7 | No video until a paid provider is configured | No free video API exists | PRO revenue or a sponsor key |
-| A8 | Assets move to object storage before public launch | Mongo 16 MB document cap | Never; this is a blocker |
+| `POST` | `/api/auth` | Clerk | Upsert the Mongo user from `{ email, name }`; never trust a body `userId` |
+| `GET` | `/api/auth/current` | Clerk | Current user document (plan, `freeUsesCount`) |
+| `POST` | `/api/image` | Clerk + quota | `{ prompt, dimensions: "512*512", quantity: 1 \| 2 }`; stores 1–2 assets |
+| `GET` | `/api/image/history` | Clerk | Latest 60 image assets, fresh URLs |
+| `GET` | `/api/conversation/all` | Clerk | Owned sessions, newest first |
+| `GET` | `/api/conversation/:sessionId` | Clerk | Owned session or `404` |
+| `POST` | `/api/conversation/session` | Clerk (+ quota if initial message) | Empty session is free |
+| `POST` | `/api/conversation/message` | Clerk + quota | Appends user + assistant messages |
+| `DELETE` | `/api/conversation/:sessionId` | Clerk | Owned session only |
+| `GET` | `/api/music/history` | Clerk | Latest 50 tracks |
+| `POST` | `/api/music/generate` | Clerk + quota | `{ prompt, duration: 5–60 }` |
+| `GET` | `/api/dashboard/summary` | Clerk | Counts, 7-day series, plan/remaining |
+| `GET` | `/api/assets/:key{.+}` | Clerk | Local driver only; enforces `users/{userId}/` prefix |
+| `POST` | `/api/stripe` | Clerk | Creates Checkout Session; returns `url` |
+| `POST` | `/api/stripe/webhook` | Signature | Public route; verifies `stripe-signature` |
+
+### 4.4 Status codes and error codes
+
+| Status | When |
+|---|---|
+| `400` | Zod validation, invalid quantity/dimensions |
+| `401` | Missing Clerk session |
+| `403` | `QUOTA_EXCEEDED` |
+| `404` | `USER_NOT_INITIALIZED`, `SESSION_NOT_FOUND`, asset not found |
+| `409` | `DUPLICATE_REQUEST` (replayed Idempotency-Key) |
+| `502` | `PROVIDER_CALL_FAILED` |
+| `503` | `PROVIDER_NOT_CONFIGURED` |
+| `500` | Anything unexpected; log server-side, return a generic message |
+
+### 4.5 Idempotency
+
+- Every charged mutation sends `Idempotency-Key` (`newIdempotencyKey()` in
+  `src/lib/idempotency.ts`).
+- `UsageLedger.idempotencyKey` is `unique + sparse`. A replay throws
+  `DuplicateRequestError` → `409` **before** the provider call.
+- When no header is supplied, the server generates `auto:<uuid>` so the ledger row still
+  exists for refunds and auditing. Never skip ledger creation.
 
 ---
 
-## 9. Gates and verification
+## 5. Data model and storage
 
-Run before and after every change:
+### 5.1 Collections (`src/models`)
+
+| Model | Fields that matter |
+|---|---|
+| `User` | `userId` (Clerk id, unique), `email` (unique), `name`, `plan: "FREE" \| "PRO"`, `freeUsesCount` |
+| `Asset` | `userId`, `kind: "image" \| "music"`, `objectKey` (unique), `mime`, `bytes`, `width`, `height`, `prompt`, `provider`, `model`, `visibility` |
+| `Music` | `userId`, `prompt`, `audioUrl`, `objectKey`, `duration`, `provider`, `model` |
+| `Conversation` | `userId`, `sessionId` (unique), `messages[]` of `{ role, content, createdAt }` |
+| `UsageLedger` | `userId`, `kind`, `status: "reserved" \| "settled" \| "refunded"`, `idempotencyKey`, `reason` |
+
+Rules:
+
+- Never store bytes or base64 in MongoDB.
+- Never trust a client-supplied `userId`, plan, quota, or object key.
+- Every read/update/delete of a user-owned document filters by `userId`.
+- Cursor-paginate before histories grow; do not remove the existing caps without adding
+  pagination.
+- Conversations are embedded documents; split messages into their own collection before a
+  document approaches MongoDB's 16 MB limit.
+
+### 5.2 Storage (`src/server/storage.ts`)
+
+- `storageDriver()` returns `s3` when `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and
+  `S3_SECRET_ACCESS_KEY` exist (or when forced), otherwise `local`.
+- Object keys are server-generated:
+  `users/{userId}/{kind}/{yyyy}/{mm}/{uuid}.{ext}`. Never use a user filename.
+- Local driver writes under `LOCAL_STORAGE_DIR` or `.data/uploads` and is served by
+  `GET /api/assets/:key` after an ownership prefix check.
+- S3 driver returns presigned URLs with a 1-hour expiry. Never persist a signed URL.
+- Delete the object when metadata creation fails; orphan cleanup is best-effort.
+- Keep `isOwnedKey()` checks on every asset read.
+
+---
+
+## 6. Quota, plans, and billing
+
+### 6.1 Policy (implemented)
+
+- `FREE_GENERATION_LIMIT = 5`, shared across image, chat, and music.
+- One request = one unit, even when an image request returns two images.
+- Creating an empty conversation session is free.
+- `PRO` has **no usage cap in code**. The UI must say "no free-tier cap", never
+  "unlimited generations", until a fair-use policy is actually enforced.
+
+### 6.2 Invariants (`src/server/quota.ts`)
+
+1. Reserve before provider work:
+   - Insert a `UsageLedger` row (`reserved`) with the caller key or `auto:<uuid>`.
+   - Atomically `$inc freeUsesCount` with a `findOneAndUpdate` guard
+     (`plan != PRO`, `freeUsesCount < limit`).
+   - If the guard fails, delete the ledger row and throw `QuotaExceededError`.
+2. Settle only after the output is durably stored and metadata persisted.
+3. Refund on provider failure, storage failure, or any non-2xx response; refund is
+   idempotent (`reserved → refunded` only) and decrements the counter at most once.
+4. `PRO` reservations have `ledgerId: null` and never touch the counter.
+5. Never compute remaining quota in the browser from local guesses — the server returns it.
+
+### 6.3 Stripe
+
+- Secret key and webhook secret are server-only (`src/lib/stripe.ts`).
+- Checkout attaches `userId` to session and subscription metadata.
+- The webhook verifies the raw body signature before any mutation.
+- `checkout.session.completed`, `customer.subscription.created`,
+  `invoice.paid` → `PRO`; `customer.subscription.deleted` → `FREE`.
+- A success redirect never grants PRO. Only the webhook does.
+- **Gap:** no `stripe_events` collection, so duplicate deliveries re-apply the write.
+  Add event-idempotency before calling billing "production ready".
+
+---
+
+## 7. AI runtime and providers
+
+### 7.1 Mode resolution (`src/server/ai/runtime.ts`)
+
+| `AI_MODE` | Behaviour |
+|---|---|
+| `mock` | Never call a provider; return visibly labelled mock bytes/text |
+| `live` | Always call the provider; throw `PROVIDER_NOT_CONFIGURED` when a key is missing |
+| `auto` (default) | Live when every key looks configured; otherwise mock outside production and live in production |
+
+`looksConfigured()` rejects empty, short (<16 chars), and placeholder-looking values
+(`your_`, `changeme`, `dummy`, `xxx`, `<...>`).
+
+Rules:
+
+- Mock mode is for local development and demos only. Label output as mock
+  (`mock: true`, `Local mock preview`, `[dev mock reply]`).
+- Production must never silently fall back to a mock.
+- Never send user prompts or files to an unapproved fallback.
+- Add timeouts and bounded retries in the adapter, not in the route.
+- Each result records `provider` and `model` so provenance is inspectable.
+
+### 7.2 Provider notes
+
+| Capability | Provider / model | Inputs actually supported |
+|---|---|---|
+| Image | Cloudflare FLUX.1 schnell | prompt, width, height (64–1536 each); 1–2 outputs per request |
+| Chat | Groq `llama-3.3-70b-versatile`, Gemini `gemini-2.5-flash` fallback | last 12 messages + new message |
+| Music | Treblo v3 | prompt, 5–60 s duration (UI offers 8/15/20) |
+| Video | none | do not add controls |
+
+Verify live provider docs before changing model IDs, params, prices, or limits.
+
+---
+
+## 8. UI/UX design system
+
+### 8.1 Visual direction
+
+Calm, premium creative workspace. Strong typography, generous canvas, subtle borders, one
+restrained accent, purposeful depth, compact but readable controls, consistent radius.
+Study Krea, Ideogram, Photoroom, and Canva for workflow patterns; never copy branding,
+copy, logos, or exact layouts.
+
+### 8.2 Tokens (`src/app/globals.css`)
+
+- Semantic CSS variables only: `background`, `foreground`, `card`, `popover`, `primary`,
+  `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, `chart-1..5`,
+  `sidebar-*`.
+- Light and dark palettes are defined in `:root` and `.dark`. Use tokens
+  (`bg-card`, `text-muted-foreground`, `border-border`), not raw hex or `bg-white` /
+  `text-slate-500`, in new code.
+- Accent is indigo (light `oklch(0.49 0.22 260)`). Radius base is `0.75rem`, with
+  `--radius-sm…4xl` derived from it.
+- Fonts: Geist Sans (`--font-geist-sans`) and Geist Mono (`--font-geist-mono`). Keep the
+  `--font-sans` mapping intact.
+- Respect `prefers-reduced-motion`; the current UI uses `animate-in`/`tw-animate-css`.
+
+### 8.3 Components
+
+- `components.json` is `style: "base-nova"` — primitives come from `@base-ui/react`.
+  Do not mix in Radix-based shadcn variants; APIs differ.
+- `src/components/ui/*` holds primitives. Feature compositions live under
+  `src/features/<feature>/components`.
+- Prefer composing Base UI primitives over adding a component library.
+- Keep `lucide-react` as the only icon set.
+- Extract a component when two features need it, not preemptively.
+
+### 8.4 Layout patterns
+
+- Shell: fixed 16rem sidebar (desktop), hamburger sheet (mobile), 16rem navbar, scrollable
+  `main` with `max-w-7xl`.
+- Page header: title + one-line description on the left, 1–3 primary actions on the right.
+- Panels use `bg-card border border-border/60 rounded-3xl`; inner surfaces use
+  `bg-secondary/40`.
+- Image Studio: composer row (prompt + size + count) above a result grid; tabs for
+  Generate / History.
+- Chat: session list column + thread + composer. Keep the composer visible.
+- Music: composer + history list with a real `<audio>`-backed player.
+- Empty states always offer the next useful action.
+
+### 8.5 Copy rules (honesty)
+
+- Say "no free-tier cap" for PRO, not "unlimited".
+- Never display a model name the request does not actually use. The chat header says
+  "AI assistant", not a hard-coded model.
+- Label mock output as mock.
+- Video explains what is missing; it has no fake controls, model picker, queue, or date.
+- Do not promise pixel-perfect preservation, copyright ownership, or provider SLAs.
+
+### 8.6 Accessibility and responsive acceptance
+
+- [ ] Sidebar collapses to a sheet; no horizontal overflow at 320 px.
+- [ ] Icon-only buttons have `aria-label`; inputs have labels or `aria-label`.
+- [ ] Logical focus order and visible focus ring.
+- [ ] Images have meaningful `alt` (or empty when decorative).
+- [ ] Loading/error changes are announced (`role="status"`, `role="alert"`).
+- [ ] Both themes pass contrast for muted text, disabled controls, and focus rings.
+- [ ] Keyboard-only run: nav → generate → open result → send chat → play track.
+
+---
+
+## 9. Client data and state
+
+### 9.1 Server state: TanStack Query
+
+React Query **is already installed** and is the only server-state cache. Do not add a
+second cache (Zustand, SWR, Redux) or copy API responses into global state.
+
+- Query keys in use: `["dashboard-summary"]`, `["current-user"]`, `["image-history"]`,
+  `["music-history"]`, `["conversations"]`, `["conversation", sessionId]`.
+- Defaults: `staleTime: 60s`, `retry: 1`, `refetchOnWindowFocus: false`.
+- Mutations must invalidate what they changed plus `["current-user"]` and
+  `["dashboard-summary"]` when quota changes.
+- Use the typed `hc` client (`src/lib/client.ts`) and infer types with
+  `InferResponseType` / `InferRequestType`. Do not hand-write response types.
+- Throw an `ApiError` with `status` so hooks can branch on `403` (quota).
+
+### 9.2 Client UI state
+
+Use local `useState`/`useReducer` first. Add Zustand only when several distant components
+need the same transient UI state (e.g. a studio draft shared across panels). Never store
+auth identity, plan, quota, conversations, assets, private URLs, or secrets in it.
+
+### 9.3 Forms
+
+- React Hook Form + `zodResolver` + the feature schema in `src/features/*/schema.ts`.
+- Read reactive values with `useWatch` — `watch()` trips the React Compiler warning.
+- Prevent duplicate submits while a mutation is pending.
+- Keep the draft on failure; clear only on success.
+- Show field errors and a single toast for the request-level error.
+
+---
+
+## 10. Testing and quality gates
+
+### 10.1 What exists
+
+- `bun test` — colocated `*.test.ts` files. Current: quota semantics, dashboard summary,
+  distribution, image schemas, AI mode resolution.
+- `bun run smoke` — runs `scripts/smoke-adapters.ts` with `AI_MODE=mock`; asserts JPEG
+  magic bytes, sharp resize, chat text, RIFF WAV, and a local storage round-trip.
+- No browser E2E, no database integration tests, no CI.
+
+### 10.2 When you change quota or billing
+
+Add/extend tests in `src/server/quota.test.ts`. Mock `@/models/*` with `mock.module` and
+dynamic-import the module under test after the mock (see that file for the pattern).
+Cover: reserve, replay, limit, refund-once, PRO bypass, missing user.
+
+### 10.3 When you change a schema or a pure function
+
+Colocate a `*.test.ts` next to it. Keep tests deterministic: no network, no database, no
+paid providers, no sleeps, no reliance on the local timezone (use UTC dates).
+
+### 10.4 When you change a route or UI flow
+
+- Extend `scripts/smoke-adapters.ts` only for adapter-level behaviour.
+- Add a manual check to §11.2 and run it in both themes.
+- If you cannot run a real browser flow (missing Clerk/Mongo/provider keys), say so — do
+  not claim the flow works.
+
+### 10.5 Gates (run in this order)
 
 ```bash
-node node_modules/typescript/bin/tsc --noEmit   # PASS (verified 2026-11-01)
-bun run lint                                     # FAIL baseline: 38 problems (26 errors, 12 warnings)
-bun run build                                    # requires .env.local; run before demos
-bun run dev -- -p 3001                           # port 3000 is usually the Forma dev server
+bun run typecheck
+bun run lint
+bun run test
+bun run smoke
+bun run build
 ```
 
-- No test framework exists. When adding one, use Vitest and test server handlers with mocked
-  providers; add a smoke script that calls one endpoint per modality.
-- Verify the page is actually Vision: check `<title>Vision</title>` before concluding anything.
-- Protected routes return 404 to curl without `Accept: text/html`; check redirects in a browser.
-- `bun run build` printing `ƒ Proxy (Middleware)` proves `src/proxy.ts` compiled.
-- Runtime verification is the only "test" until Vitest lands: start the dev server, exercise
-  the golden path, and read the server log.
+- Do not weaken ESLint rules or add `any` to make a gate pass.
+- Do not fix unrelated debt inside a focused change; record it instead.
+- Report the exact counts you observed, not "all good".
 
 ---
 
-## 10. Maintenance routine
+## 11. Security and reliability
 
-**Every change**
-- One feature slice; run all gates; update the status table in §2 if behavior changed.
-- Add or update the decision log when a provider, quota, or storage choice changes.
-- Never commit `.env*`. Rotate any key that appears in a log or screenshot.
+### 11.1 Server authorization
 
-**Weekly**
-- Check provider pricing/limits and model IDs (Cloudflare, Groq, Treblo, Stripe API version).
-- Review Cloudflare neuron usage, Groq rate-limit errors, Treblo failures, Stripe failed payments.
-- Check Mongo document sizes for `conversations` and `images`; prune test data.
-- Run `bun outdated` mentally: do not upgrade Next/Clerk/Stripe mid-demo week.
+- Derive `userId` from Clerk (`getAuth(c)`), never from body/query/header.
+- Filter every user-owned query by `userId`.
+- Validate every request body with Zod; enforce prompt length, dimension range, quantity
+  cap, duration range, and file limits.
+- Reject asset keys outside `users/{userId}/` and any key containing `..` or `\`.
+- Keep the webhook public but signature-verified.
 
-**Monthly**
-- Refresh screenshots and the demo recording.
-- Review free-tier abuse (signups per IP, generation spikes) and tighten limits.
-- Re-read this file and delete rules that no longer match the code.
+### 11.2 Reliability
 
----
+- Map provider failures to `502`/`503`; log the cause server-side without secrets.
+- Refund the reservation before returning an error.
+- Bound provider calls with a timeout and at most a small number of retries.
+- Make duplicate queue/webhook deliveries safe to re-apply or ignore.
+- Never leave a reservation stuck in `reserved`; add reconciliation if jobs become async.
 
-## 11. Internship-ready checklist (do in this order)
+### 11.3 Privacy
 
-### P0 — blocking (target: today)
+- Do not log prompts, raw provider payloads, signed URLs, tokens, or personal data by
+  default.
+- Keep originals private; generate fresh URLs per response.
+- Document retention and deletion before launch. Account deletion must remove metadata and
+  schedule object cleanup.
 
-1. ~~Fix D1~~ — done 2026-11-01.
-2. ~~Fix D2~~ — done 2026-11-01: Groq adapter (`llama-3.3-70b-versatile`) with Gemini fallback.
-3. ~~Fix D3~~ — done 2026-11-01: Cloudflare JSON parsing + sharp normalization.
-4. ~~Fix D4~~ — done 2026-11-01: bytes in storage, metadata in Mongo, size/count caps.
-5. ~~Fix D5/D6~~ — done 2026-11-01: atomic reserve/settle/refund with `UsageLedger`.
-6. ~~Remove D9/D10~~ — done 2026-11-01: README rewritten against the real stack; video page is
-   an honest unavailable state with a "Soon" nav badge.
-7. ~~Add `.env.example`~~ — done 2026-11-01.
-8. ~~Fix D11~~ — done 2026-11-01: image responses are metadata objects.
-9. **Add metadata** — real description, Open Graph image, favicon, page titles per route.
-10. **Demo dry run** — complete §11.1 twice, once in a private window. Blocked until Clerk,
-    MongoDB, and Stripe are configured with real values (§11.2).
+### 11.4 Insecure areas to fix before public launch
 
-### P1 — same day if time allows
-
-- Rate limit generation, upload, and auth routes per user/IP.
-- Stripe webhook: store event IDs, ignore duplicates, handle `invoice.payment_failed`.
-- Add an error boundary and a global toast for provider failures.
-- Remove the ngrok origin from `next.config.ts`; configure it via env if still needed.
-- Check mobile: sidebar sheet, image form, conversation composer.
-
-### 11.1 Demo script (5 minutes)
-
-1. Sign up with a fresh account; land on the dashboard and read the quota.
-2. Generate 2 images from one prompt; show the result, metadata, and history.
-3. Ask one chat question; show the reply and that the quota decreased.
-4. Generate one music track; play it from history.
-5. Exhaust the 5th generation; show the upgrade CTA and the blocked action.
-6. Open Stripe test checkout, complete payment, show the webhook flipping the plan to PRO.
-7. Delete a conversation; show it disappearing from history.
-
-### 11.2 Demo prerequisites (current blockers)
-
-The application code is ready; the demo needs real infrastructure values in `.env.local`:
-
-1. **Clerk** — a real publishable and secret key. With placeholders, `src/proxy.ts` cannot
-   authenticate and no protected route renders or returns data.
-2. **MongoDB** — a reachable `DB_URL`. Signup sync, quota reservation, assets, and history all
-   depend on it. `mongodb://127.0.0.1:27017/vision` works with a local `mongod` or container.
-3. **Stripe (test mode)** — secret key, PRO price ID, and `stripe listen` forwarding to
-   `/api/stripe/webhook` for step 6 of §11.1.
-4. **AI providers (optional for a first pass)** — with placeholders, `AI_MODE=auto` runs local
-   mocks and the UI labels results "Local mock preview". Set real provider keys (and optionally
-   `AI_MODE=live`) for genuine model output.
-
-Verify without those keys: `bun run typecheck`, `bun run lint`, `bun run build`, `bun run smoke`.
-
-### 11.3 Portfolio assets
-
-- README: architecture diagram, screenshots of each surface, setup, env table, API list,
-  cost table, known limitations, roadmap.
-- 60–90 second Loom of §11.1.
-- One-page cost/latency note using measured numbers, not estimates.
-- Screenshot of the free-limit and upgrade flow (proves billing works).
+1. Add IP/user rate limiting to `/api/image`, `/api/music/generate`,
+   `/api/conversation/message`, and auth-adjacent routes.
+2. Persist Stripe event IDs and skip duplicates.
+3. Add a `stripe_events`-style audit collection for billing changes.
+4. Add upload validation if file upload is introduced (MIME sniffing, size, pixels).
+5. Add error monitoring (Sentry or equivalent) and a health check.
 
 ---
 
-## 12. Roadmap after today
+## 12. Performance targets
 
-| Phase | Scope |
-|---|---|
-| 1 | ~~Storage + asset metadata + signed URLs~~ (done 2026-11-01); pagination; Vitest + CI |
-| 2 | Image editing (crop/rotate/inpaint only with a verified model); prompt presets |
-| 3 | Product Studio (upload → background → scene) with before/after |
-| 4 | Music upgrade path (paid Treblo or Stability); video behind PRO only |
-| 5 | Public portfolio launch: custom domain, analytics, error monitoring, legal pages |
-
-Do not start a later phase while a P0 item in §11 is open.
+- Keep dashboard reads parallel (already `Promise.all` in `loadDashboardData`).
+- Return only fields the page renders; never send blobs or full histories in list routes.
+- Use indexes for `{ userId, createdAt }` and always keep a `limit`.
+- Add cursor pagination before raising history caps.
+- Show an immediate accepted/pending state; never fake a percentage.
+- Measure p50/p95 before claiming an improvement.
 
 ---
 
-## 13. Open questions
+## 13. Internship-ready roadmap
 
-1. Storage: R2 (same vendor as image) or S3 (existing habits)? Default to R2.
-2. Chat: Groq free vs paid Gemini for quality? Decide with 10 real prompts, not vibes.
-3. Music: keep Treblo (cheap) or switch to Stability (licensed-data story)? Decide before launch.
-4. Deploy target: Vercel (current demo) or a container host using `output: "standalone"`?
-5. Video: keep the honest placeholder or hide the nav item until a provider exists?
+Priority: **UI clarity → interaction completeness → reliability → demo polish.** Do not
+rewrite the backend to make it look different.
+
+### Phase A — Verify and baseline (done)
+
+- [x] Read the stack, routes, models, quota, storage, and providers.
+- [x] Record typecheck/lint/test/smoke/build baselines.
+- [x] Add unit tests for quota and pure logic.
+- [x] Remove lint errors and dead controls.
+
+### Phase B — Product honesty and UI polish
+
+- [ ] Replace remaining hard-coded values (quota limit in `Plan`) with server data.
+- [ ] Add a real image error state (503/502) beside the upgrade modal.
+- [ ] Make chat composer a textarea with Enter/Shift+Enter hint.
+- [ ] Show the active provider/mock badge on each studio when `mock: true`.
+- [ ] Keyboard and 320 px pass across all five surfaces; both themes.
+- [ ] Add `loading.tsx` / `error.tsx` boundaries per segment.
+
+### Phase C — Reliability
+
+- [ ] Rate limiting on charged routes.
+- [ ] Stripe event idempotency + `stripe_events` collection.
+- [ ] Generate a request id and return it in error responses.
+- [ ] Bounded provider timeouts exposed as stable error codes.
+- [ ] Cursor pagination for image/music/conversation history.
+
+### Phase D — Demo and portfolio
+
+- [ ] `.env.example` matches every variable the code reads; README setup verified from a
+  clean clone.
+- [ ] README: honest status table, architecture, API, limits, screenshots.
+- [ ] Record a 60–90 s walkthrough of the five-minute script.
+- [ ] Add CI (typecheck, lint, test, build) on push.
+- [ ] Confirm the deployed preview matches `main`.
+
+### 13.1 Five-minute demo script
+
+1. Sign in and land on the dashboard.
+2. Read plan and remaining free generations.
+3. Generate one image, open it, download it, find it in history.
+4. Ask a chat question and see the reply persisted.
+5. Generate a track and play it.
+6. Hit the free limit and see the upgrade modal.
+7. Complete Stripe test checkout; confirm PRO only after the webhook.
+8. Open Video and see the honest "not available" page.
+9. Delete a conversation and confirm it disappears.
+
+If a step is unavailable in the demo environment, say why instead of staging a fake.
 
 ---
 
-## 14. Do / don't
+## 14. Decision log
 
-**Do**
-- Read the relevant `node_modules/next/dist/docs/` page before touching routing or layouts.
-- Put authorization and quota checks on the server, every time.
-- Return stable error codes and log a correlation ID.
-- Keep prompts and provider configs out of components.
-- Prefer small, reviewable commits with a one-line subject.
+| Decision | Current direction | Revisit when |
+|---|---|---|
+| Database | MongoDB + Mongoose | Measured limitation or owner decision |
+| API | Hono mounted at `/api` | Streaming or runtime requirement changes |
+| Server state | TanStack Query (already present) | A demonstrated need for a different cache |
+| Client state | Local state; no Zustand | Shared UI state spans distant components |
+| Component base | shadcn `base-nova` on Base UI | A component cannot meet a11y/design needs |
+| Storage | Local or S3-compatible via one adapter | B2/ImageKit/CDN becomes a requirement |
+| Image provider | Cloudflare FLUX.1 schnell | Quality, cost, or latency no longer fit |
+| Chat provider | Groq first, Gemini fallback | Rate limits or quality change |
+| Music provider | Treblo v3 | Contract, quality, or cost changes |
+| Video | Disabled, honest page | A verified provider + jobs + billing exist |
+| Free quota | 5 shared successful requests | Product owner changes pricing |
+| PRO quota | No cap in code; copy says "no free-tier cap" | A fair-use policy is enforced |
+| Tests | Bun built-in runner | Team standardizes on another runner |
 
-**Don't**
-- Don't store bytes in Mongo, trust client owner IDs, or expose provider keys.
-- Don't add a dependency without a stated reason and a removal path.
-- Don't "fix" the 38 lint problems as part of an unrelated change.
-- Don't ship a control that the configured provider cannot support.
-- Don't claim "unlimited", "4K", or a release date that the code does not deliver.
+---
+
+## 15. Do / don't
+
+### Do
+
+- Read the Next.js docs shipped with the installed version before changing routing,
+  caching, or proxy behaviour.
+- Keep `src/proxy.ts` beside `src/app` — a root-level `proxy.ts` is silently ignored.
+- Use semantic tokens and test light + dark.
+- Keep `Idempotency-Key` on every charged mutation.
+- Keep the ledger-backed quota path for every new charged feature.
+- Return stable error codes and preserve prompts on failure.
+- Add a `*.test.ts` next to pure logic and quota changes.
+- Update this file when architecture, providers, or policy changes.
+
+### Don't
+
+- Don't add TanStack Query (already present) or a second cache.
+- Don't add Zustand for server data.
+- Don't store bytes/base64 or signed URLs in MongoDB.
+- Don't trust client-supplied `userId`, plan, quota, or object keys.
+- Don't expose secrets or private object keys.
+- Don't mix Radix and Base UI primitives.
+- Don't ship an untouched shadcn starter look or dead controls.
+- Don't claim "unlimited", "4K", a video date, or a provider feature without proof.
+- Don't run `bun run build` against real production secrets in a shared environment.
+- Don't commit `.env.local`, `.data/`, or `.next/`.
+
+---
+
+## 16. Definition of done
+
+- [ ] The requested behaviour works end to end, or the blocker is documented.
+- [ ] Server authorization and ownership are enforced.
+- [ ] Inputs are validated on the client and the server.
+- [ ] Loading, empty, success, error, and quota states exist where relevant.
+- [ ] Light and dark themes, desktop and 320 px mobile checked.
+- [ ] Keyboard navigation and visible focus verified.
+- [ ] No secret, private URL, or raw provider payload exposed.
+- [ ] `typecheck`, `lint`, `test`, `smoke`, `build` pass; new lint/type errors are zero.
+- [ ] README and this guide updated when behaviour or architecture changed.
+- [ ] Report states what changed, what was tested, and what remains blocked.
+
+**North star:** a recruiter can open Vision, understand it in 30 seconds, create
+something, find it again, see the cost honestly, and trust that the files are private.

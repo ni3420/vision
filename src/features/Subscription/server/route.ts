@@ -4,6 +4,10 @@ import { User } from "@/models/user.models"
 import { getAuth } from "@clerk/hono"
 import Stripe from "stripe"
 
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
 const app = new Hono()
   .post("/", async (c) => {
     try {
@@ -49,10 +53,10 @@ const app = new Hono()
         },
         200
       )
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Stripe Checkout Error:", error)
       return c.json(
-        { success: false, error: error.message || "Internal server error" },
+        { success: false, error: errorMessage(error, "Internal server error") },
         500
       )
     }
@@ -77,9 +81,10 @@ const app = new Hono()
         )
       console.log("session type",event.type)
 
-      } catch (err: any) {
-        console.error(`Webhook Construct Event Error: ${err.message}`)
-        return c.text(`Webhook Error: ${err.message}`, 400)
+      } catch (err: unknown) {
+        const message = errorMessage(err, "invalid signature")
+        console.error(`Webhook Construct Event Error: ${message}`)
+        return c.text(`Webhook Error: ${message}`, 400)
       }
 
       switch (event.type) {
@@ -153,9 +158,12 @@ const app = new Hono()
       }
 
       return c.json({ received: true }, 200)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Webhook Execution Error:", error)
-      return c.json({ error: error.message || "Webhook handler failed" }, 500)
+      return c.json(
+        { error: errorMessage(error, "Webhook handler failed") },
+        500
+      )
     }
   })
 

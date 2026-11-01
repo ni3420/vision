@@ -38,8 +38,8 @@ function serializeAsset(asset: IAsset & { _id: unknown }, url: string) {
 const app = new Hono()
   .post(
     "/",
-    quotaGuard("image"),
     zValidator("json", imageGenerationSchema),
+    quotaGuard("image"),
     async (c) => {
       const auth = getAuth(c);
       if (!auth?.userId) {

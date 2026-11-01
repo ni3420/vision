@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
-import { Sparkles, History, Sliders } from "lucide-react"
+import { History, Sliders } from "lucide-react"
 import CreateImageForm from "@/features/image/components/create-image-form"
 import ImageHistory from "@/features/image/components/image-history"
 

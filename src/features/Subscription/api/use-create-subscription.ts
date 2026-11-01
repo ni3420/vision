@@ -11,8 +11,8 @@ export const useCreateCheckout = () => {
       const res = await client.api.stripe["$post"]({ json })
       
       if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error((errorData as any).error || "Failed to initiate Stripe payment")
+        const errorData = (await res.json()) as { error?: string }
+        throw new Error(errorData.error || "Failed to initiate Stripe payment")
       }
 
       return await res.json()

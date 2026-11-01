@@ -69,8 +69,8 @@ const app = new Hono()
   })
   .post(
     "/generate",
-    quotaGuard("music"),
     zValidator("json", GenerateMusicSchema),
+    quotaGuard("music"),
     async (c) => {
       const auth = getAuth(c);
       if (!auth?.userId) {
