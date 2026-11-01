@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import sharp from "sharp";
 import { generateImage } from "./image";
-import { ProviderCallError } from "./runtime";
+import { ProviderCallError, ProviderNotConfiguredError } from "./runtime";
 
 const KEY = "cf_test_key_0123456789abcdef";
 const TOUCHED_ENV = [
@@ -112,6 +112,32 @@ describe("generateImage against a Cloudflare Worker", () => {
     expect(error).toBeInstanceOf(ProviderCallError);
     expect((error as ProviderCallError).retryable).toBe(true);
     expect(calls).toHaveLength(3);
+  });
+
+  test("never falls back to a local mock when the provider is unset", async () => {
+    delete process.env.CLOUDFARE_URL;
+    delete process.env.CLOUDFARE_API_KEY;
+    process.env.AI_MODE = "auto";
+    stubFetch(pngResponse);
+
+    const error = await generateImage({ prompt: "a red fox", width: 256, height: 256 }).catch(
+      (thrown: unknown) => thrown
+    );
+
+    expect(error).toBeInstanceOf(ProviderNotConfiguredError);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("renders the labelled mock only when AI_MODE=mock is explicit", async () => {
+    delete process.env.CLOUDFARE_URL;
+    delete process.env.CLOUDFARE_API_KEY;
+    process.env.AI_MODE = "mock";
+
+    const result = await generateImage({ prompt: "a red fox", width: 256, height: 256 });
+
+    expect(result.mock).toBe(true);
+    expect(result.provider).toBe("local");
+    expect(calls).toHaveLength(0);
   });
 
   test("falls back to the account endpoint when no worker URL is set", async () => {

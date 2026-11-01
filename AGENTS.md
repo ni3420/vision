@@ -65,9 +65,9 @@ Read this file before changing code. Then:
 |---|---|---|
 | Types | `bun run typecheck` | **PASS** |
 | Lint | `bun run lint` | **PASS — 0 problems** |
-| Unit tests | `bun run test` | **PASS — 106 tests / 12 files** |
-| Adapters | `bun run smoke` | **PASS** (forces mock mode) |
-| Build | `bun run build` | **PASS** — compiled in 26.7s, 9 routes (2026-11-02) |
+| Unit tests | `bun run test` | **PASS — 113 tests / 12 files** |
+| Adapters | `bun run smoke` | **PASS** (forces mock mode + local storage) |
+| Build | `bun run build` | **PASS** — compiled in 24.4s, 9 routes (2026-11-02) |
 
 One non-blocking Turbopack warning remains for the runtime-computed local storage root
 (`src/server/storage.ts`); it is intentional, not an error.
@@ -286,10 +286,15 @@ Rules:
 - Object keys are server-generated:
   `users/{userId}/{kind}/{yyyy}/{mm}/{uuid}.{ext}`. Never use a user filename.
 - Local driver writes under `LOCAL_STORAGE_DIR` or `.data/uploads` and is served by
-  `GET /api/assets/:key` after an ownership prefix check. No durable URL exists.
+  `GET /api/assets/:key` after an ownership prefix check. No durable URL exists. It is
+  dev-only: the working `.env.local` sets `STORAGE_DRIVER=s3` (Backblaze B2), and
+  `bun run smoke` pins the local driver explicitly for its filesystem round-trip.
 - S3 driver (AWS, R2, **Backblaze B2**) returns presigned URLs with a 1-hour expiry.
-  Never persist a signed URL. B2 uses `S3_ENDPOINT=https://s3.<region>.backblazeb2.com`
-  and `S3_REGION=<region>` (e.g. `us-west-004`), not `auto`.
+  Never persist a signed URL. B2 uses `S3_ENDPOINT=s3.<region>.backblazeb2.com`
+  and `S3_REGION=<region>` (e.g. `us-east-005`), not `auto`.
+- `s3Endpoint()` normalizes `S3_ENDPOINT`: a provider-documented bare host gets
+  `https://` prepended and trailing slashes are trimmed. Without this the AWS SDK throws
+  `Invalid URL` on every upload.
 - ImageKit driver uploads server-side to `https://upload.imagekit.io/api/v1/files/upload`
   with Basic auth `PRIVATE_KEY:` and multipart `file`, `fileName`, `folder`,
   `useUniqueFileName=false`. `imagekitPublicUrl(key)` is `IMAGEKIT_URL_ENDPOINT + "/" + key`.
@@ -356,6 +361,10 @@ Rules:
 
 - Mock mode is for local development and demos only. Label output as mock
   (`mock: true`, `Local mock preview`, `[dev mock reply]`).
+- **Images are cloud-only.** `generateImage` ignores the `auto` mock fallback and throws
+  `PROVIDER_NOT_CONFIGURED` (route returns 503) when no provider key looks configured.
+  A local preview happens only with an explicit `AI_MODE=mock`, which `bun run smoke` uses.
+  Chat and music still follow the table above.
 - Production must never silently fall back to a mock.
 - Never send user prompts or files to an unapproved fallback.
 - Add timeouts and bounded retries in the adapter, not in the route.

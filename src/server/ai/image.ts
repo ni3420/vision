@@ -237,6 +237,15 @@ export async function generateImage(
     process.env.CLOUDFARE_API_KEY ?? process.env.CLOUDFLARE_API_TOKEN,
   ]);
 
+  // Images must never fall back to a local preview: only an explicit AI_MODE=mock
+  // may skip the provider, so a missing key surfaces as 503 instead of fake output.
+  const mockRequested = (process.env.AI_MODE ?? "").trim().toLowerCase() === "mock";
+  if (mode === "mock" && !mockRequested) {
+    throw new ProviderNotConfiguredError(
+      "Image provider not configured: set CLOUDFARE_URL and CLOUDFARE_API_KEY"
+    );
+  }
+
   if (mode === "mock") {
     warnMock("image");
     const bytes = await renderMockImage(

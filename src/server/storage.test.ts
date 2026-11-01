@@ -4,6 +4,7 @@ import {
   getObjectUrl,
   imagekitPublicUrl,
   putObject,
+  s3Endpoint,
   signImageKitUrl,
   storageDriver,
 } from "./storage";
@@ -170,5 +171,62 @@ describe("ImageKit upload", () => {
     process.env.IMAGEKIT_URL_ENDPOINT = ENDPOINT;
 
     expect(storageDriver()).toBe("imagekit");
+  });
+});
+
+describe("s3Endpoint", () => {
+  const original = process.env.S3_ENDPOINT;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.S3_ENDPOINT;
+    else process.env.S3_ENDPOINT = original;
+  });
+
+  it("adds https to a bare Backblaze host", () => {
+    process.env.S3_ENDPOINT = "s3.us-west-004.backblazeb2.com";
+
+    expect(s3Endpoint()).toBe("https://s3.us-west-004.backblazeb2.com");
+  });
+
+  it("keeps an explicit scheme and trims trailing slashes", () => {
+    process.env.S3_ENDPOINT = "http://127.0.0.1:9000/";
+
+    expect(s3Endpoint()).toBe("http://127.0.0.1:9000");
+  });
+
+  it("returns undefined when unset or blank", () => {
+    delete process.env.S3_ENDPOINT;
+    expect(s3Endpoint()).toBeUndefined();
+
+    process.env.S3_ENDPOINT = "   ";
+    expect(s3Endpoint()).toBeUndefined();
+  });
+});
+
+describe("driver detection", () => {
+  afterEach(() => {
+    delete process.env.STORAGE_DRIVER;
+    delete process.env.S3_BUCKET;
+    delete process.env.S3_ACCESS_KEY_ID;
+    delete process.env.S3_SECRET_ACCESS_KEY;
+    delete process.env.IMAGEKIT_PRIVATE_KEY;
+    delete process.env.IMAGEKIT_URL_ENDPOINT;
+  });
+
+  it("selects s3 when Backblaze credentials are present", () => {
+    process.env.S3_BUCKET = "vision-assets";
+    process.env.S3_ACCESS_KEY_ID = "key";
+    process.env.S3_SECRET_ACCESS_KEY = "secret";
+
+    expect(storageDriver()).toBe("s3");
+  });
+
+  it("lets an explicit local driver win over cloud credentials", () => {
+    process.env.STORAGE_DRIVER = "local";
+    process.env.S3_BUCKET = "vision-assets";
+    process.env.S3_ACCESS_KEY_ID = "key";
+    process.env.S3_SECRET_ACCESS_KEY = "secret";
+
+    expect(storageDriver()).toBe("local");
   });
 });

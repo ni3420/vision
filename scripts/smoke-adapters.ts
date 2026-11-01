@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { generateImage } from "../src/server/ai/image";
 import { generateChatReply } from "../src/server/ai/chat";
 import { generateMusic } from "../src/server/ai/music";
@@ -13,6 +14,14 @@ import {
 } from "../src/server/storage";
 
 process.env.AI_MODE = "mock";
+// The storage round-trip below checks the local driver's file/URL contract, so
+// keep it on local disk even when .env.local points production at Backblaze.
+process.env.STORAGE_DRIVER = "local";
+process.env.LOCAL_STORAGE_DIR = path.join(
+  /* turbopackIgnore: true */ process.cwd(),
+  ".data",
+  "smoke"
+);
 
 const image = await generateImage({
   prompt: "a neon city at night, cinematic",

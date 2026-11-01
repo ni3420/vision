@@ -120,6 +120,14 @@ export function signImageKitUrl(
   return parsed.toString();
 }
 
+/** Backblaze and other S3-compatible providers often document a bare host. */
+export function s3Endpoint(): string | undefined {
+  const raw = process.env.S3_ENDPOINT?.trim();
+  if (!raw) return undefined;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withScheme.replace(/\/+$/, "");
+}
+
 function s3(): S3Client {
   if (!process.env.S3_BUCKET) {
     throw new StorageNotConfiguredError("S3_BUCKET is not set");
@@ -127,7 +135,7 @@ function s3(): S3Client {
   if (!cachedClient) {
     cachedClient = new S3Client({
       region: process.env.S3_REGION ?? "auto",
-      endpoint: process.env.S3_ENDPOINT || undefined,
+      endpoint: s3Endpoint(),
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
       credentials: {
         accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",

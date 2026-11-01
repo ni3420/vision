@@ -35,7 +35,7 @@ flowchart TD
     Next["Next.js App Router<br/>dashboard UI + Clerk"]
     API["Hono API<br/>/api/*"]
     DB[("MongoDB<br/>users, assets, conversations, music, ledger")]
-    Store[("Storage<br/>local .data/uploads or S3/R2")]
+    Store[("Storage<br/>Backblaze B2 (S3 API) / ImageKit")]
     CF["Cloudflare Worker<br/>FLUX.2 klein 4B"]
     Groq["Groq<br/>chat completions"]
     Gemini["Gemini<br/>fallback"]
@@ -90,7 +90,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` (your own Worker), or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (direct) | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
 | Music provider | `TREBLO_API_KEY` | For live music |
-| Storage | `STORAGE_DRIVER` (`local` \| `s3` \| `imagekit`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Local by default |
+| Storage | `STORAGE_DRIVER` (`s3` \| `imagekit` \| `local`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Backblaze B2 (`s3`) in this repo's `.env.local`; `local` is dev-only |
 | Billing | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
 
 ### Mock mode
@@ -103,11 +103,15 @@ The complete list with comments lives in [`.env.example`](.env.example).
 
 In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFIGURED` instead of silently faking output.
 
+**Images never fall back to a mock on their own.** With `AI_MODE=auto` and no image provider key, `POST /api/image/generate` returns `503 PROVIDER_NOT_CONFIGURED`; set `CLOUDFARE_URL` and `CLOUDFARE_API_KEY` for cloud generation. The gradient preview exists only when `AI_MODE=mock` is set explicitly (as `bun run smoke` does).
+
 ### Storage
 
-- `STORAGE_DRIVER=local` writes to `.data/uploads` (git-ignored) and serves files from `GET /api/assets/:key`, which requires the owning Clerk session.
-- `STORAGE_DRIVER=s3` works with AWS S3, Cloudflare R2, and **Backblaze B2** (`S3_ENDPOINT=https://s3.<region>.backblazeb2.com`, `S3_REGION=<region>`); reads return short-lived presigned URLs.
+Generated images and music are written to **Backblaze B2** through its S3-compatible API. This repo's `.env.local` sets `STORAGE_DRIVER=s3`, and the endpoint is accepted with or without a scheme (a bare `s3.<region>.backblazeb2.com` gets `https://` prepended).
+
+- `STORAGE_DRIVER=s3` works with Backblaze B2, AWS S3, and Cloudflare R2 (`S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`); reads return short-lived presigned URLs.
 - `STORAGE_DRIVER=imagekit` uploads server-side to ImageKit and stores the durable CDN URL on the asset, so history never depends on a URL that expires. Set `IMAGEKIT_PRIVATE_FILES=true` to upload private files, which are served with signed `ik-t`/`ik-s` URLs instead.
+- `STORAGE_DRIVER=local` writes to `.data/uploads` (git-ignored) and serves files from `GET /api/assets/:key`, which requires the owning Clerk session. Use it only for offline development; `bun run smoke` forces it so the adapter check never touches the bucket.
 
 Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ownership is re-checked on every read. Generated images are stored with their URL in `assets.url`; presigned or signed URLs are never persisted.
 
