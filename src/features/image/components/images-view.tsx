@@ -1,13 +1,25 @@
 "use client";
 
 import Image from "next/image";
-import { Download, Loader2, AlertCircle, Sparkles } from "lucide-react";
+import { Download, AlertCircle, Sparkles } from "lucide-react";
 import Loading from "@/components/loading-spinner";
+
+export interface GeneratedImage {
+  id: string;
+  url: string;
+  prompt?: string;
+  width?: number | null;
+  height?: number | null;
+  provider?: string;
+  model?: string;
+  createdAt?: string | Date;
+}
 
 interface ImageViewsProps {
   data?: {
     success: boolean;
-    images: string[];
+    images: GeneratedImage[];
+    mock?: boolean;
   };
   isPending: boolean;
   isError: boolean;
@@ -16,8 +28,8 @@ interface ImageViewsProps {
 
 const ImageViews = ({ data, isPending, isError, dimensions }: ImageViewsProps) => {
   const [widthStr, heightStr] = dimensions.split("*");
-  const aspectWidth = parseInt(widthStr, 10) || 232;
-  const aspectHeight = parseInt(heightStr, 10) || 300;
+  const fallbackWidth = parseInt(widthStr, 10) || 232;
+  const fallbackHeight = parseInt(heightStr, 10) || 300;
 
   const handleDownload = async (imgUrl: string, index: number) => {
     try {
@@ -38,8 +50,8 @@ const ImageViews = ({ data, isPending, isError, dimensions }: ImageViewsProps) =
 
   if (isPending) {
     return (
-      <div >
-        <Loading/>
+      <div>
+        <Loading />
       </div>
     );
   }
@@ -87,47 +99,57 @@ const ImageViews = ({ data, isPending, isError, dimensions }: ImageViewsProps) =
           <span className="px-2 py-0.5 text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 rounded-md">
             {data.images.length} File{data.images.length > 1 ? "s" : ""} Compiled
           </span>
+          {data.mock ? (
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20 rounded-md">
+              Local mock preview
+            </span>
+          ) : null}
         </div>
       </div>
 
       <div className="flex flex-wrap gap-4 justify-center">
-        {data.images.map((imgUrl, index) => (
-          <div
-            key={index}
-            className="relative overflow-hidden rounded-2xl border border-border/80 shadow-lg shadow-slate-100 dark:shadow-none bg-secondary/20 transition-all duration-300 group hover:scale-[1.01] hover:border-primary/50"
-            style={{
-              width: `${aspectWidth}px`,
-              height: `${aspectHeight}px`,
-              maxWidth: "100%",
-            }}
-          >
-            <Image
-              src={imgUrl}
-              alt={`AI Variant Frame Output ${index + 1}`}
-              fill
-              sizes={`${aspectWidth}px`}
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
-              unoptimized
-            />
-            
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-3">
-              <div className="flex items-center justify-between w-full">
-                <span className="text-[11px] font-bold text-white tracking-wide">
-                  Variant #{index + 1}
-                </span>
-                
-                <button
-                  type="button"
-                  onClick={() => handleDownload(imgUrl, index)}
-                  className="p-2 rounded-xl bg-white text-slate-900 hover:bg-slate-100 border border-white/10 shadow-xl transition-all duration-200 active:scale-95 flex items-center justify-center cursor-pointer"
-                  aria-label="Export compiled vector stream"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </button>
+        {data.images.map((image, index) => {
+          const aspectWidth = image.width ?? fallbackWidth;
+          const aspectHeight = image.height ?? fallbackHeight;
+
+          return (
+            <div
+              key={image.id}
+              className="relative overflow-hidden rounded-2xl border border-border/80 shadow-lg shadow-slate-100 dark:shadow-none bg-secondary/20 transition-all duration-300 group hover:scale-[1.01] hover:border-primary/50"
+              style={{
+                width: `${aspectWidth}px`,
+                height: `${aspectHeight}px`,
+                maxWidth: "100%",
+              }}
+            >
+              <Image
+                src={image.url}
+                alt={`AI Variant Frame Output ${index + 1}`}
+                fill
+                sizes={`${aspectWidth}px`}
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
+                unoptimized
+              />
+
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-3">
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-[11px] font-bold text-white tracking-wide">
+                    Variant #{index + 1}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(image.url, index)}
+                    className="p-2 rounded-xl bg-white text-slate-900 hover:bg-slate-100 border border-white/10 shadow-xl transition-all duration-200 active:scale-95 flex items-center justify-center cursor-pointer"
+                    aria-label="Export compiled vector stream"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { client } from "@/lib/client"
+import { newIdempotencyKey } from "@/lib/idempotency"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { InferRequestType, InferResponseType } from "hono"
 import { toast } from "sonner"
@@ -15,7 +16,10 @@ export const useCreateMusic = () => {
 
   return useMutation<ResponseType, ApiError, RequestType>({
     mutationFn: async ({ json }) => {
-      const res = await client.api.music.generate["$post"]({ json })
+      const res = await client.api.music.generate["$post"](
+        { json },
+        { headers: { "Idempotency-Key": newIdempotencyKey() } }
+      )
 
       if (!res.ok) {
         const error = new Error("Failed to generate music track from neural engine") as ApiError

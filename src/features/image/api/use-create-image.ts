@@ -1,4 +1,5 @@
 import { client } from "@/lib/client"
+import { newIdempotencyKey } from "@/lib/idempotency"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { InferResponseType, InferRequestType } from "hono"
 import { toast } from "sonner"
@@ -15,7 +16,10 @@ export const useCreateImage = () => {
 
   return useMutation<ResponseType, ApiError, RequestType>({
     mutationFn: async ({ json }) => {
-      const res = await client.api.image["$post"]({ json })
+      const res = await client.api.image["$post"](
+        { json },
+        { headers: { "Idempotency-Key": newIdempotencyKey() } }
+      )
 
       if (!res.ok) {
         const error = new Error("Could not generate image assets from neural engine pipeline") as ApiError

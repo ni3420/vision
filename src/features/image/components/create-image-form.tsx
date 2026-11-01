@@ -26,7 +26,7 @@ const PRESET_SIZES = [
   { label: "Cinematic HD (1024×576)", value: "1024*576" },
 ]
 
-const QUANTITY_OPTIONS = Array.from({ length: 4 }, (_, i) => ({
+const QUANTITY_OPTIONS = Array.from({ length: 2 }, (_, i) => ({
   label: `${i + 1} Variation${i > 0 ? "s" : ""}`,
   value: String(i + 1),
 }))

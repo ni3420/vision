@@ -1,114 +1,141 @@
-import { Hono } from "hono"
-import { zValidator } from "@hono/zod-validator"
-import { getAuth } from "@hono/clerk-auth"
-import axios from "axios"
-import { Music } from "@/models/music.models"
-import { User } from "@/models/user.models"
-import { checkPlanLimit } from "@/middleware/freeUsesLimit-middleware"
-import { GenerateMusicSchema } from "../schema"
+import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
+import { getAuth } from "@clerk/hono";
+import { Music, type IMusic } from "@/models/music.models";
+import { quotaGuard } from "@/middleware/quota-middleware";
+import { generateMusic } from "@/server/ai/music";
+import {
+  ProviderCallError,
+  ProviderNotConfiguredError,
+} from "@/server/ai/runtime";
+import {
+  buildObjectKey,
+  deleteObject,
+  getObjectUrl,
+  putObject,
+} from "@/server/storage";
+import { GenerateMusicSchema } from "../schema";
 
-const TREBLO_API_KEY = process.env.TREBLO_API_KEY!
-const TREBLO_BASE_URL = "https://api.treblo.com/v1/generations"
+const HISTORY_LIMIT = 50;
 
-const trebloClient = axios.create({
-  baseURL: TREBLO_BASE_URL,
-  timeout: 10000,
-  headers: {
-    Authorization: `Bearer ${TREBLO_API_KEY}`,
-    "Content-Type": "application/json",
-  },
-})
+type MusicRecord = IMusic & { _id: unknown };
+
+async function serializeTrack(track: MusicRecord) {
+  const url = track.objectKey
+    ? await getObjectUrl(track.objectKey)
+    : track.audioUrl;
+
+  return {
+    _id: String(track._id),
+    prompt: track.prompt,
+    audioUrl: url,
+    duration: track.duration,
+    provider: track.provider ?? null,
+    model: track.model ?? null,
+    createdAt: track.createdAt,
+  };
+}
 
 const app = new Hono()
-
-  // 1. FETCH MUSIC GENERATION HISTORY FOR CURRENT USER
   .get("/history", async (c) => {
-    try {
-      const auth = getAuth(c)
-      if (!auth?.userId) {
-        return c.json({ success: false, error: "Unauthorized access vector" }, 401)
-      }
+    const auth = getAuth(c);
+    if (!auth?.userId) {
+      return c.json(
+        { success: false, code: "UNAUTHORIZED", error: "Unauthorized access vector" },
+        401
+      );
+    }
 
-      const history = await Music.find({ userId: auth.userId }).sort({ createdAt: -1 })
-      return c.json({ success: true, data: history }, 200)
-    } catch (error: any) {
-      console.error("Error fetching music history:", error.message)
-      return c.json({ success: false, error: "Failed to retrieve music history" }, 500)
+    try {
+      const tracks = await Music.find({ userId: auth.userId })
+        .sort({ createdAt: -1 })
+        .limit(HISTORY_LIMIT)
+        .lean<MusicRecord[]>();
+
+      return c.json(
+        {
+          success: true,
+          data: await Promise.all(tracks.map((track) => serializeTrack(track))),
+        },
+        200
+      );
+    } catch (error) {
+      console.error("Music history failed:", error);
+      return c.json(
+        { success: false, code: "MUSIC_HISTORY_FAILED", error: "Failed to retrieve music history" },
+        500
+      );
     }
   })
-
-  // 2. GENERATE NEW MUSIC TRACK (POLLING FLOW)
-  .post("/generate", checkPlanLimit, zValidator("json", GenerateMusicSchema), async (c) => {
-    try {
-      const auth = getAuth(c)
+  .post(
+    "/generate",
+    quotaGuard("music"),
+    zValidator("json", GenerateMusicSchema),
+    async (c) => {
+      const auth = getAuth(c);
       if (!auth?.userId) {
-        return c.json({ success: false, error: "Unauthorized access vector" }, 401)
+        return c.json(
+          { success: false, code: "UNAUTHORIZED", error: "Unauthorized access vector" },
+          401
+        );
       }
 
-      const { prompt, duration } = c.req.valid("json")
+      const { prompt, duration } = c.req.valid("json");
 
-      // Step 1: Start Treblo music generation task
-      const startResponse = await trebloClient.post("/v3", { prompt })
-      const taskId = startResponse.data?.task_id || startResponse.data?.id
+      try {
+        const result = await generateMusic({
+          prompt,
+          durationSec: duration,
+        });
 
-      if (!taskId) {
-        return c.json({ success: false, error: "Failed to initialize generation task" }, 500)
-      }
+        const extension = result.mime.includes("wav") ? "wav" : "mp3";
+        const key = buildObjectKey(auth.userId, "music", extension);
 
-      // Step 2: Poll status until task completes or times out
-      let completed = false
-      let attempts = 0
-      const maxAttempts = 20 // 20 * 5s = 100s max
+        await putObject(key, result.bytes, result.mime);
 
-      while (!completed && attempts < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, 5000))
-        attempts++
+        try {
+          const track = await Music.create({
+            userId: auth.userId,
+            prompt,
+            audioUrl: "",
+            objectKey: key,
+            provider: result.provider,
+            model: result.model,
+            duration: result.durationSec,
+          });
 
-        const statusResponse = await trebloClient.get(`/status/${taskId}`)
-        
-        // FIX: Treat response body directly as trimmed, uppercase string
-        const rawStatus = String(statusResponse.data).trim().toUpperCase()
-        console.log(`[Attempt ${attempts}/${maxAttempts}] Generation Status: ${rawStatus}`)
-
-        if (rawStatus === "SUCCESS" || rawStatus === "COMPLETED") {
-          completed = true
-        } else if (rawStatus === "FAILED" || rawStatus === "FAILURE" || rawStatus === "ERROR") {
-          throw new Error("Music generation engine encountered a failure")
+          return c.json(
+            {
+              success: true,
+              mock: result.mock,
+              data: await serializeTrack(track),
+            },
+            201
+          );
+        } catch (error) {
+          await deleteObject(key);
+          throw error;
         }
+      } catch (error) {
+        if (error instanceof ProviderNotConfiguredError) {
+          return c.json(
+            { success: false, code: error.code, error: error.message },
+            503
+          );
+        }
+        if (error instanceof ProviderCallError) {
+          return c.json(
+            { success: false, code: error.code, error: error.message },
+            502
+          );
+        }
+        console.error("Music generation failed:", error);
+        return c.json(
+          { success: false, code: "MUSIC_GENERATION_FAILED", error: "Failed to generate track" },
+          500
+        );
       }
-
-      if (!completed) {
-        return c.json({ success: false, error: "Music generation request timed out" }, 504)
-      }
-
-      // Step 3: Fetch generated audio details
-      const resultResponse = await trebloClient.get(`/${taskId}`)
-      const audioUrl = resultResponse.data?.song_paths?.[0] || resultResponse.data?.audio_url
-
-      if (!audioUrl) {
-        return c.json({ success: false, error: "Audio file path was not returned" }, 500)
-      }
-
-      // Save to MongoDB history
-      const track = await Music.create({
-        userId: auth.userId,
-        prompt,
-        audioUrl,
-        duration: duration || 15,
-      })
-
-      // Deduct/increment user's free usage count
-      await User.findOneAndUpdate(
-        { userId: auth.userId },
-        { $inc: { freeUsesCount: 1 } },
-        { new: true }
-      )
-
-      return c.json({ success: true, data: track }, 201)
-    } catch (error: any) {
-      console.error("Music generation pipeline error:", error.response?.data || error.message)
-      return c.json({ success: false, error: "Failed to generate track from audio engine" }, 500)
     }
-  })
+  );
 
-export default app
+export default app;

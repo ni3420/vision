@@ -5,7 +5,11 @@ export const MessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"], {
     message: "Message role is required",
   }),
-  content: z.string().min(1, "Message content cannot be empty"),
+  content: z
+    .string()
+    .trim()
+    .min(1, "Message content cannot be empty")
+    .max(4000, "Message content must be 4000 characters or fewer"),
   createdAt: z.coerce.date().optional(),
 });
 

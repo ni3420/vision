@@ -4,6 +4,7 @@ import React from "react"
 import Image from "next/image"
 import { Download, Sparkles, Loader2, AlertCircle, RefreshCw, LayoutGrid } from "lucide-react"
 import { useImageHistory } from "../api/use-image-history"
+import type { GeneratedImage } from "./images-view"
 
 export const ImageHistory = () => {
   const { data, isPending, isError, refetch } = useImageHistory()
@@ -57,7 +58,8 @@ export const ImageHistory = () => {
     )
   }
 
-  const hasImages = data && data.images && data.images.length > 0
+  const images: GeneratedImage[] = data?.images ?? []
+  const hasImages = images.length > 0
 
   if (!hasImages) {
     return (
@@ -85,34 +87,34 @@ export const ImageHistory = () => {
           </span>
         </div>
         <span className="text-xs font-bold bg-secondary border px-2.5 py-0.5 rounded-md text-foreground">
-          {data.images.length} Compiled Variations
+          {images.length} Compiled Variations
         </span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {data.images.map((imgUrl: string, index: number) => (
+        {images.map((image, index) => (
           <div
-            key={`${imgUrl}-${index}`}
+            key={image.id}
             className="relative aspect-[232/300] w-full overflow-hidden rounded-2xl border border-border/80 shadow-md bg-secondary/20 transition-all duration-300 group hover:scale-[1.02] hover:border-primary/50"
           >
             <Image
-              src={imgUrl}
-              alt={`Historical Variant Output Index ${index + 1}`}
+              src={image.url}
+              alt={image.prompt || `Historical Variant Output Index ${index + 1}`}
               fill
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
               className="object-cover transition-transform duration-500 group-hover:scale-105"
               unoptimized
             />
-            
+
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2.5">
               <div className="flex items-center justify-between w-full">
                 <span className="text-[10px] font-bold text-white/90 tracking-wide">
                   #{index + 1}
                 </span>
-                
+
                 <button
                   type="button"
-                  onClick={() => handleDownload(imgUrl, index)}
+                  onClick={() => handleDownload(image.url, index)}
                   className="p-1.5 rounded-lg bg-white text-slate-900 hover:bg-slate-100 shadow-xl transition-all duration-200 active:scale-95 flex items-center justify-center cursor-pointer"
                   aria-label="Export raw image stream matrix"
                 >

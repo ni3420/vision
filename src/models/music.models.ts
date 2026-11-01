@@ -1,9 +1,12 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
-export interface IMusic extends Document {
+export interface IMusic {
   userId: string;
   prompt: string;
   audioUrl: string;
+  objectKey?: string;
+  provider?: string;
+  model?: string;
   duration: number;
   createdAt: Date;
 }
@@ -12,7 +15,10 @@ const MusicSchema = new Schema<IMusic>(
   {
     userId: { type: String, required: true, index: true },
     prompt: { type: String, required: true },
-    audioUrl: { type: String, required: true },
+    audioUrl: { type: String, default: "" },
+    objectKey: { type: String },
+    provider: { type: String },
+    model: { type: String },
     duration: { type: Number, default: 15 },
   },
   { timestamps: true }

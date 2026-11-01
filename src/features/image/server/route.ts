@@ -1,99 +1,194 @@
-import { Hono } from "hono"
-import { zValidator } from "@hono/zod-validator"
-import axios from "axios"
-import { imageGenerationSchema } from "../schema"
-import Image from "@/models/image.models"
-import { getAuth } from "@clerk/hono"
-import {checkPlanLimit} from "@/middleware/freeUsesLimit-middleware"
-import { User } from "@/models/user.models"
+import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
+import { getAuth } from "@clerk/hono";
+import {
+  imageGenerationSchema,
+  imageQuantitySchema,
+  parseDimensions,
+} from "../schema";
+import { quotaGuard } from "@/middleware/quota-middleware";
+import { generateImage } from "@/server/ai/image";
+import {
+  ProviderCallError,
+  ProviderNotConfiguredError,
+} from "@/server/ai/runtime";
+import {
+  buildObjectKey,
+  deleteObject,
+  getObjectUrl,
+  putObject,
+} from "@/server/storage";
+import { Asset, type IAsset } from "@/models/asset.models";
+
+const HISTORY_LIMIT = 60;
+
+function serializeAsset(asset: IAsset & { _id: unknown }, url: string) {
+  return {
+    id: String(asset._id),
+    url,
+    prompt: asset.prompt ?? "",
+    width: asset.width ?? null,
+    height: asset.height ?? null,
+    provider: asset.provider,
+    model: asset.model,
+    createdAt: asset.createdAt,
+  };
+}
+
 const app = new Hono()
-  .post("/", checkPlanLimit,zValidator("json", imageGenerationSchema), async (c) => {
-    try {
-      const auth = getAuth(c)
-      if (!auth || !auth.userId) {
-        return c.json({ success: false, error: "Unauthorized access vector" }, 401)
+  .post(
+    "/",
+    quotaGuard("image"),
+    zValidator("json", imageGenerationSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!auth?.userId) {
+        return c.json(
+          { success: false, code: "UNAUTHORIZED", error: "Unauthorized access vector" },
+          401
+        );
       }
-      const { userId } = auth
 
-      const { dimensions, prompt, quantity } = c.req.valid("json")
-      const FreeCount=0
-      
-      const count = typeof quantity === 'string' ? parseInt(quantity, 4) : quantity
-      const formattedDimensions = dimensions.replace('*', 'x') 
-      const structuralPrompt = `${prompt}, aspect ratio ${formattedDimensions}, high quality photorealistic`
+      const body = c.req.valid("json");
+      const quantity = imageQuantitySchema.safeParse(body.quantity);
+      const dimensions = parseDimensions(body.dimensions);
 
-      const generationTasks = Array.from({ length: count }).map(() => 
-        axios({
-          method: "POST",
-          url: process.env.CLOUDFARE_URL,
-          headers: {
-            'Authorization': `Bearer ${process.env.CLOUDFARE_API_KEY}`,
-            "Content-Type": "application/json"
+      if (!quantity.success) {
+        return c.json(
+          {
+            success: false,
+            code: "INVALID_QUANTITY",
+            error: "Quantity must be an integer between 1 and 2",
           },
-          data: { prompt: structuralPrompt },
-          responseType: "arraybuffer"
-        })
-      )
+          400
+        );
+      }
 
-      const responses = await Promise.all(generationTasks)
+      if (!dimensions) {
+        return c.json(
+          {
+            success: false,
+            code: "INVALID_DIMENSIONS",
+            error: "Dimensions must be between 64 and 1536 pixels per side",
+          },
+          400
+        );
+      }
 
-      const imageUrls = responses.map((res) => {
-        const base64Image = Buffer.from(res.data).toString('base64')
-        return `data:image/jpeg;base64,${base64Image}`
-      })
+      try {
+        const results = await Promise.all(
+          Array.from({ length: quantity.data }, () =>
+            generateImage({
+              prompt: body.prompt,
+              width: dimensions.width,
+              height: dimensions.height,
+            })
+          )
+        );
 
-      await Image.findOneAndUpdate(
-        { userId: userId },
-        { 
-          $push: { 
-            Images: { $each: imageUrls } 
-          } 
-        },
-        { upsert: true, new: true }
-      )
+        const stored: { key: string; asset: IAsset & { _id: unknown } }[] = [];
 
-      await User.findOneAndUpdate(
-  { userId: userId },
-  { $inc: { freeUsesCount: FreeCount+1 } },
-  { new: true }
-)
-      return c.json({
-        success: true,
-        images: imageUrls
-      }, 200)
+        try {
+          for (const result of results) {
+            const extension = result.mime === "image/png" ? "png" : "jpg";
+            const key = buildObjectKey(auth.userId, "image", extension);
 
-    } catch (error: any) {
-      console.error("Hono Multi-Image Generation Error:", error.message)   
-      return c.json({ success: false, error: error.message }, 500)
+            await putObject(key, result.bytes, result.mime);
+
+            const asset = await Asset.create({
+              userId: auth.userId,
+              kind: "image",
+              objectKey: key,
+              mime: result.mime,
+              bytes: result.bytes.byteLength,
+              width: result.width,
+              height: result.height,
+              prompt: body.prompt,
+              provider: result.provider,
+              model: result.model,
+              visibility: "private",
+            });
+
+            stored.push({ key, asset });
+          }
+        } catch (error) {
+          await Promise.all(stored.map(({ key }) => deleteObject(key)));
+          throw error;
+        }
+
+        const images = await Promise.all(
+          stored.map(async ({ key, asset }) =>
+            serializeAsset(asset, await getObjectUrl(key))
+          )
+        );
+
+        return c.json(
+          {
+            success: true,
+            images,
+            mock: results.some((result) => result.mock),
+          },
+          200
+        );
+      } catch (error) {
+        if (error instanceof ProviderNotConfiguredError) {
+          return c.json(
+            { success: false, code: error.code, error: error.message },
+            503
+          );
+        }
+        if (error instanceof ProviderCallError) {
+          return c.json(
+            { success: false, code: error.code, error: error.message },
+            502
+          );
+        }
+        console.error("Image generation failed:", error);
+        return c.json(
+          { success: false, code: "IMAGE_GENERATION_FAILED", error: "Image generation failed" },
+          500
+        );
+      }
     }
-  })
+  )
   .get("/history", async (c) => {
-    try {
-      const auth = getAuth(c)
-      if (!auth || !auth.userId) {
-        return c.json({ success: false, error: "Unauthorized access vector" }, 401)
-      }
-      const { userId } = auth
-
-      const imageHistory = await Image.findOne({ userId })
-      if (!imageHistory) {
-        return c.json({
-          success: true,
-          images: [],
-          message: "No generation history found matching this workspace signature"
-        }, 200)
-      }
-
-      return c.json({
-        success: true,
-        images: imageHistory.Images,
-        message: "Image history array synchronized successfully"
-      }, 200)
-      
-    } catch (error: any) {
-      console.error("Hono History Ingestion Error:", error.message)
-      return c.json({ success: false, error: error.message }, 500)
+    const auth = getAuth(c);
+    if (!auth?.userId) {
+      return c.json(
+        { success: false, code: "UNAUTHORIZED", error: "Unauthorized access vector" },
+        401
+      );
     }
-  })
 
-export default app
+    try {
+      const assets = await Asset.find({ userId: auth.userId, kind: "image" })
+        .sort({ createdAt: -1 })
+        .limit(HISTORY_LIMIT)
+        .lean<(IAsset & { _id: unknown })[]>();
+
+      const images = await Promise.all(
+        assets.map(async (asset) =>
+          serializeAsset(asset, await getObjectUrl(asset.objectKey))
+        )
+      );
+
+      return c.json(
+        {
+          success: true,
+          images,
+          message: images.length
+            ? "Image history synchronized successfully"
+            : "No generation history found for this account",
+        },
+        200
+      );
+    } catch (error) {
+      console.error("Image history failed:", error);
+      return c.json(
+        { success: false, code: "IMAGE_HISTORY_FAILED", error: "Failed to load image history" },
+        500
+      );
+    }
+  });
+
+export default app;
