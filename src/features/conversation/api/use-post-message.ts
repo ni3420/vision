@@ -38,6 +38,7 @@ export const usePostMessage = (sessionId: string) => {
       queryClient.invalidateQueries({ queryKey: ["conversation", sessionId] })
       queryClient.invalidateQueries({ queryKey: ["conversations"] })
       queryClient.invalidateQueries({queryKey:["current-user"]})
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] })
       
     },
   })

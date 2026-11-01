@@ -9,6 +9,7 @@ import subscriptionRouter from "@/features/Subscription/server/route"
 import { DB } from '@/db/db'
 import conversationRouter from "@/features/conversation/server/route"
 import assetsRouter from "@/features/assets/server/route"
+import dashboardRouter from "@/features/dashboard/server/route"
 import { clerkMiddleware } from '@clerk/hono'
 
 
@@ -27,6 +28,7 @@ const app = new Hono().basePath('/api')
 .route("/auth", authRouter)
 .route("/image", ImageRouter)
 .route("/conversation",conversationRouter)
+.route("/dashboard", dashboardRouter)
 .route("/music",musicRouter)
 .route("/assets", assetsRouter)
 .route("/stripe",subscriptionRouter)

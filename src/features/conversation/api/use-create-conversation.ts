@@ -32,6 +32,7 @@ export const useCreateSession = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] })
       queryClient.invalidateQueries({ queryKey: ["current-user"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] })
     },
     onError: (err: ApiError) => {
       if (err?.status === 403) {

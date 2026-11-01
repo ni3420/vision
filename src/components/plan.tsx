@@ -5,15 +5,23 @@ import { Sparkles, Zap, ShieldCheck, Crown, Loader2 } from "lucide-react"
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
 import { useCreateCheckout } from "@/features/Subscription/api/use-create-subscription"
 
-interface PlanProps {
-  onUpgradeClick?: () => void
+interface PlanUser {
+  plan?: string
+  freeUsesCount?: number
 }
 
-export const Plan = ({ onUpgradeClick }: PlanProps) => {
-  const { data: userResponse, isPending: isUserPending, isError } = useCurrentUser()
+interface PlanProps {
+  onUpgradeClick?: () => void
+  user?: PlanUser
+}
+
+export const Plan = ({ onUpgradeClick, user: providedUser }: PlanProps) => {
+  const { data: userResponse, isPending: isUserPending, isError } = useCurrentUser({
+    enabled: !providedUser,
+  })
   const { mutate: handleCheckout, isPending: isCheckoutPending } = useCreateCheckout()
 
-  const user = userResponse?.data
+  const user = providedUser ?? userResponse?.data
   const isPremium = user?.plan === "PRO"
   const maxCount = 5
   const currentCount = user?.freeUsesCount ?? 0
@@ -28,7 +36,7 @@ export const Plan = ({ onUpgradeClick }: PlanProps) => {
     }
   }
 
-  if (isUserPending) {
+  if (isUserPending && !providedUser) {
     return (
       <div className="w-full bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl p-4 flex items-center justify-center min-h-[140px]">
         <Loader2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400 animate-spin" />
@@ -36,7 +44,7 @@ export const Plan = ({ onUpgradeClick }: PlanProps) => {
     )
   }
 
-  if (isError || !userResponse?.success) {
+  if (!providedUser && (isError || !userResponse?.success)) {
     return (
       <div className="w-full bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30 rounded-2xl p-4 text-center">
         <span className="text-xs text-red-600 dark:text-red-400 font-medium">

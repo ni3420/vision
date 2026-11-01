@@ -33,6 +33,7 @@ export const useCreateMusic = () => {
       toast.success("Music track generated successfully!")
       queryClient.invalidateQueries({ queryKey: ["current-user"] })
       queryClient.invalidateQueries({ queryKey: ["music-history"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] })
     },
     onError: (err: ApiError) => {
       if (err?.status === 403) {

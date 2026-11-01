@@ -1,288 +1,205 @@
-# vision
+# Vision
 
-> Full-stack Next.js web application integrated with AI, Stripe payments, and Clerk authentication.
+An AI creative studio that puts image generation, conversation, and music generation in one workspace. Built as a full-stack Next.js application with a Hono API, MongoDB persistence, Clerk authentication, and Stripe billing.
 
-[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-vision--steel--pi.vercel.app-6366f1?style=for-the-badge)](https://vision-steel-pi.vercel.app/)
-![GitHub stars](https://img.shields.io/github/stars/ni3420/vision?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/ni3420/vision?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/ni3420/vision?style=for-the-badge&logo=github) ![Last commit](https://img.shields.io/github/last-commit/ni3420/vision?style=for-the-badge&logo=github)
-![GitHub stars](https://img.shields.io/github/stars/ni3420/vision?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/ni3420/vision?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/ni3420/vision?style=for-the-badge&logo=github) ![Last commit](https://img.shields.io/github/last-commit/ni3420/vision?style=for-the-badge&logo=github)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
+![Hono](https://img.shields.io/badge/Hono-4-E36000?style=flat-square&logo=hono&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-7-47A248?style=flat-square&logo=mongodb&logoColor=white)
+![Clerk](https://img.shields.io/badge/Clerk-7-6C47FF?style=flat-square&logo=clerk&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-22-635BFF?style=flat-square&logo=stripe&logoColor=white)
 
-## 📑 Table of Contents
+Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.app) (Clerk-protected; the deployment may lag the default branch).
 
-- [Description](#description)
-- [Key Features](#key-features)
-- [Use Cases](#use-cases)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Key Dependencies](#key-dependencies)
-- [Available Scripts](#available-scripts)
-- [API Endpoints](#api-endpoints)
-- [Project Structure](#project-structure)
-- [Development Setup](#development-setup)
-- [Contributors](#contributors)
-- [Contributing](#contributing)
+## Status at a glance
 
-## 📝 Description
+| Surface | State today |
+| --- | --- |
+| Dashboard | Generation entry points, credit usage, plan, and recent activity |
+| Image generation | Cloudflare Workers AI FLUX.1 schnell, 1–2 images per request, private storage |
+| Conversation | Groq `llama-3.3-70b-versatile` with Gemini `gemini-2.5-flash` fallback |
+| Music generation | Treblo v3, stored as a playable audio asset |
+| Video generation | Not available — no provider is configured or integrated |
+| Free plan quota | 5 generations per account, enforced server-side |
+| Pro upgrade | Stripe Checkout; the webhook flips the plan to PRO |
 
-Vision is a full-stack web application built on Next.js, TypeScript, and Tailwind CSS. It combines modern client and server technologies to deliver AI-driven features alongside user management and subscription capabilities.\n\nThe application architecture leverages Hono for API endpoint routing, Mongoose for MongoDB database interactions, and OpenAI APIs for backend intelligence. User authentication and UI components are powered by Clerk, while client-side state and data validation are handled using TanStack Query, React Hook Form, and Zod.\n\nDesigned for modern web development, Vision provides a cohesive starting point for building scalable web applications that require AI tools, user sessions, and payment processing out of the box.
+Each generation request consumes one quota unit (an image request for two images is still one unit). Without real provider keys the app runs in **mock mode** locally so every screen can be exercised end to end.
 
-## ✨ Key Features
-
-- **🔐 Clerk User Authentication** — User authentication and session management powered by Clerk integration.
-- **🤖 OpenAI Backend Capabilities** — AI processing and features powered by the OpenAI API integration.
-- **💳 Stripe Billing and Payments** — Subscription management and payment processing powered by Stripe.
-- **⚡ Hono API Endpoint Routes** — Fast and lightweight API route handling using the Hono framework.
-- **🗄️ MongoDB and Mongoose Persistence** — Data persistence and object modeling managed through Mongoose and MongoDB.
-- **📋 Type-Safe Form Validation** — Robust form handling and schema validation using React Hook Form and Zod.
-- **🔄 TanStack Query Data Fetching** — Client-side asynchronous data fetching and caching with TanStack Query.
-
-## 🎯 Use Cases
-
-- Building a web application requiring AI workflows, user accounts, and billing.
-- Developing a Next.js full-stack app backed by Hono routes and MongoDB.
-- Deploying a SaaS platform with integrated Stripe payments and Clerk authentication.
-
-## 🛠️ Tech Stack
-
-![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white) ![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-
-**Notable libraries:** Clerk, Hono, Mongoose, OpenAI, React Hook Form, Stripe, TanStack Query, Zod
-
-## 🏗️ Architecture
-
-A high-level view of how the main pieces fit together:
+## Architecture
 
 ```mermaid
 flowchart TD
-    User["👤 User / Browser"]
-    FE["🖼️ Next.js Frontend"]
-    User --> FE
-    API["⚙️ API Server"]
-    FE --> API
-    DB[("🗄️ MongoDB")]
+    User["Browser"]
+    Next["Next.js App Router<br/>dashboard UI + Clerk"]
+    API["Hono API<br/>/api/*"]
+    DB[("MongoDB<br/>users, assets, conversations, music, ledger")]
+    Store[("Storage<br/>local .data/uploads or S3/R2")]
+    CF["Cloudflare Workers AI<br/>FLUX.1 schnell"]
+    Groq["Groq<br/>llama-3.3-70b-versatile"]
+    Gemini["Gemini<br/>gemini-2.5-flash"]
+    Treblo["Treblo v3"]
+    Stripe["Stripe<br/>Checkout + webhook"]
+
+    User --> Next
+    Next --> API
     API --> DB
-    EXT0["🔌 Stripe"]
-    API --> EXT0
-    EXT1["🔌 OpenAI"]
-    API --> EXT1
+    API --> Store
+    API --> CF
+    API --> Groq
+    API -. fallback .-> Gemini
+    API --> Treblo
+    API --> Stripe
+    Stripe -. webhook .-> API
 ```
 
-## ⚡ Quick Start
+A generation request flows through: Clerk session → Zod validation → quota reservation → provider call → object storage → asset metadata in MongoDB → quota settlement. Provider failures refund the reservation; a replayed idempotency key returns `409 DUPLICATE_REQUEST` instead of charging again.
+
+## Quick start
+
+Prerequisites: Node.js 20+ (or Bun 1.4+), Docker for the local database, and a Clerk application.
 
 ```bash
-
-# 1. Clone the repository
 git clone https://github.com/ni3420/vision.git
+cd vision
+bun install
 
-# 2. Install dependencies
-npm install
+cp .env.example .env.local
+# edit .env.local: Clerk keys and NEXT_PUBLIC_APP_URL
+# DB_URL already points at the compose service
 
-# 3. Start the dev server
-npm run dev
+docker compose up -d      # MongoDB 7 on 127.0.0.1:27017
+bun run dev
 ```
 
-## 📦 Key Dependencies
+`docker compose down` stops the database and keeps its data in the `mongo-data` volume; add `-v` to delete the data too. The service is bound to `127.0.0.1` only, so it is not exposed to the network.
 
-```
-@base-ui/react: ^1.6.0
-@clerk/express: ^2.1.43
-@clerk/hono: ^0.1.53
-@clerk/nextjs: ^7.5.20
-@clerk/ui: ^1.25.5
-@google/genai: ^2.12.0
-@hono/clerk-auth: ^3.1.1
-@hono/zod-validator: ^0.9.0
-@hookform/resolvers: ^5.4.0
-@musicapi/sdk: ^0.1.0
-@tanstack/react-query: ^5.101.2
-axios: ^1.18.1
-class-variance-authority: ^0.7.1
-clsx: ^2.1.1
-cmdk: ^1.1.1
-```
+Open `http://localhost:3000`, sign up, and generate an image. The dashboard's `UserSync` component creates the MongoDB user on first load; quota checks need that record.
 
-## 🚀 Available Scripts
+### Environment variables
 
-- **dev** — `npm run dev`
-- **build** — `npm run build`
-- **start** — `npm run start`
-- **lint** — `npm run lint`
+The complete list with comments lives in [`.env.example`](.env.example).
 
-## 🌐 API Endpoints
+| Group | Variables | Needed |
+| --- | --- | --- |
+| Database | `DB_URL` | Always |
+| Auth | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Always |
+| App | `NEXT_PUBLIC_APP_URL` | Always (Stripe redirects) |
+| Runtime mode | `AI_MODE` (`auto` \| `live` \| `mock`) | Optional, defaults to `auto` |
+| Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY`, or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | For live images |
+| Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
+| Music provider | `TREBLO_API_KEY` | For live music |
+| Storage | `STORAGE_DRIVER`, `LOCAL_STORAGE_DIR`, `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` | Local by default |
+| Billing | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
 
-Detected endpoints (best-effort scan):
+### Mock mode
 
-```
-/api/[[...route]]
-```
+`AI_MODE=auto` (default) calls a provider when its key looks real; otherwise it renders a local mock outside production. Mock output is visibly labelled in the UI (`Local mock preview`, `[dev mock reply]`) and is never presented as real output. The mocks are:
 
-## 📁 Project Structure
+- **Image** — a locally rendered gradient card with the prompt, resized with `sharp`.
+- **Chat** — a canned reply that repeats the prompt.
+- **Music** — a synthesized WAV chord, capped at 20 seconds.
 
-```
-.
-├── AGENTS.md
-├── CLAUDE.md
-├── bun.lock
-├── components.json
-├── eslint.config.mjs
-├── next.config.ts
-├── package.json
-├── postcss.config.mjs
-├── public
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
-├── src
-│   ├── app
-│   │   ├── (dashboard)
-│   │   │   ├── conversation
-│   │   │   │   └── page.tsx
-│   │   │   ├── image-generator
-│   │   │   │   └── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   ├── music-generator
-│   │   │   │   └── page.tsx
-│   │   │   ├── page.tsx
-│   │   │   └── video-generator
-│   │   │       └── page.tsx
-│   │   ├── api
-│   │   │   └── [[...route]]
-│   │   │       └── route.ts
-│   │   ├── auth
-│   │   │   ├── sign-in
-│   │   │   │   └── [[...sign-in]]
-│   │   │   │       └── ...
-│   │   │   └── sign-up
-│   │   │       └── [[...sign-up]]
-│   │   │           └── ...
-│   │   ├── favicon.ico
-│   │   ├── globals.css
-│   │   ├── layout.tsx
-│   │   └── not-found.tsx
-│   ├── components
-│   │   ├── Input.tsx
-│   │   ├── loading-spinner.tsx
-│   │   ├── plan.tsx
-│   │   ├── skeleton.tsx
-│   │   └── ui
-│   │       ├── button.tsx
-│   │       ├── command.tsx
-│   │       ├── dialog.tsx
-│   │       ├── input-group.tsx
-│   │       ├── input.tsx
-│   │       ├── select.tsx
-│   │       ├── sheet.tsx
-│   │       └── textarea.tsx
-│   ├── db
-│   │   └── db.ts
-│   ├── features
-│   │   ├── Subscription
-│   │   │   ├── api
-│   │   │   │   └── use-create-subscription.ts
-│   │   │   ├── components
-│   │   │   │   ├── upgarde-model.tsx
-│   │   │   │   └── upgrade-banner.tsx
-│   │   │   └── server
-│   │   │       └── route.ts
-│   │   ├── auth
-│   │   │   ├── api
-│   │   │   │   ├── use-current-user.ts
-│   │   │   │   └── use-login.ts
-│   │   │   ├── schema.ts
-│   │   │   └── server
-│   │   │       └── route.ts
-│   │   ├── conversation
-│   │   │   ├── api
-│   │   │   │   ├── use-create-conversation.ts
-│   │   │   │   ├── use-delete-conversation.ts
-│   │   │   │   ├── use-get-all-conversation.ts
-│   │   │   │   ├── use-get-conversation.ts
-│   │   │   │   └── use-post-message.ts
-│   │   │   ├── components
-│   │   │   │   ├── conversation-history.tsx
-│   │   │   │   ├── create-conversation.tsx
-│   │   │   │   └── show-conversation.tsx
-│   │   │   ├── schema.ts
-│   │   │   └── server
-│   │   │       └── route.ts
-│   │   ├── dashboard
-│   │   │   └── components
-│   │   │       ├── Success.tsx
-│   │   │       ├── dashboard-page.tsx
-│   │   │       ├── mobile-sidebar.tsx
-│   │   │       ├── navbar.tsx
-│   │   │       └── sidebar.tsx
-│   │   ├── image
-│   │   │   ├── api
-│   │   │   │   ├── use-create-image.ts
-│   │   │   │   └── use-image-history.ts
-│   │   │   ├── components
-│   │   │   │   ├── create-image-form.tsx
-│   │   │   │   ├── image-history.tsx
-│   │   │   │   └── images-view.tsx
-│   │   │   ├── schema.ts
-│   │   │   └── server
-│   │   │       └── route.ts
-│   │   └── music
-│   │       ├── api
-│   │       │   ├── use-get-music-history.ts
-│   │       │   └── use-music-genrate.ts
-│   │       ├── components
-│   │       │   ├── create-music.tsx
-│   │       │   └── music-history.tsx
-│   │       ├── schema.ts
-│   │       └── server
-│   │           └── route.ts
-│   ├── gemini
-│   │   ├── conversation-ai.ts
-│   │   └── gemini.ts
-│   ├── lib
-│   │   ├── client.ts
-│   │   ├── stripe.ts
-│   │   └── utils.ts
-│   ├── middleware
-│   │   └── freeUsesLimit-middleware.ts
-│   ├── models
-│   │   ├── conversation.models.ts
-│   │   ├── image.models.ts
-│   │   ├── music.models.ts
-│   │   └── user.models.ts
-│   ├── providers
-│   │   └── providers.tsx
-│   └── proxy.ts
-└── tsconfig.json
+In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFIGURED` instead of silently faking output.
+
+### Storage
+
+- `STORAGE_DRIVER=local` writes to `.data/uploads` (git-ignored) and serves files from `GET /api/assets/:key`, which requires the owning Clerk session.
+- `STORAGE_DRIVER=s3` (or any S3-compatible endpoint such as Cloudflare R2) returns short-lived presigned URLs instead.
+
+Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ownership is re-checked on every read.
+
+### Stripe
+
+1. Create a recurring price and set `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`.
+2. Forward events locally with `stripe listen --forward-to localhost:3000/api/stripe/webhook` and set `STRIPE_WEBHOOK_SECRET`.
+3. The webhook handles `checkout.session.completed`, `customer.subscription.created`, `invoice.paid`, and `customer.subscription.deleted`.
+
+`/api/stripe/webhook` is the only API route outside Clerk protection; its signature is verified before any database write.
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `bun run dev` | Next.js dev server (Turbopack) |
+| `bun run build` | Production build |
+| `bun run start` | Serve the production build |
+| `bun run typecheck` | `tsc --noEmit` |
+| `bun run lint` | ESLint |
+| `bun run smoke` | Adapter smoke test; forces `AI_MODE=mock` and verifies JPEG bytes, resizing, chat text, WAV output, and a storage round-trip |
+
+## API
+
+All routes are mounted under `/api` and require a Clerk session unless noted. Mutating generation routes accept an `Idempotency-Key` header.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/auth` | Upsert the signed-in user and return the MongoDB record |
+| `GET` | `/api/auth/current` | Current user (plan, `freeUsesCount`) |
+| `POST` | `/api/image` | Generate 1–2 images (`prompt`, `dimensions`, `quantity`) |
+| `GET` | `/api/image/history` | 60 newest image assets |
+| `POST` | `/api/music/generate` | Generate a track and store it |
+| `GET` | `/api/music/history` | 50 newest tracks with fresh URLs |
+| `POST` | `/api/conversation/session` | Create a conversation (optionally with a first message) |
+| `POST` | `/api/conversation/message` | Append a message and get the reply |
+| `GET` | `/api/conversation/all` | All conversations for the current user |
+| `GET` | `/api/conversation/:sessionId` | One conversation |
+| `DELETE` | `/api/conversation/:sessionId` | Delete a conversation |
+| `GET` | `/api/assets/:key` | Owner-only local asset read |
+| `POST` | `/api/stripe` | Create a Checkout session |
+| `POST` | `/api/stripe/webhook` | Stripe events (public, signature-verified) |
+
+Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `PROVIDER_NOT_CONFIGURED` (503), and `PROVIDER_CALL_FAILED` (502).
+
+### Request limits
+
+- Prompt: 3–1000 characters.
+- Dimensions: 64–1536 px per side, `WIDTH*HEIGHT` format.
+- Quantity: 1–2 images per request.
+- Conversation messages: 4000 characters server-side; only the last 12 turns are sent to the model.
+
+## Data model
+
+| Collection | Holds |
+| --- | --- |
+| `users` | Clerk `userId`, email, name, plan, `freeUsesCount` |
+| `assets` | Image/music metadata: object key, MIME, bytes, dimensions, prompt, provider, model |
+| `usage_ledger` | Reservation records with a unique sparse idempotency key |
+| `conversations` | Session metadata and message history |
+| `music` | Track metadata, object key, provider, model, duration |
+
+## Known limitations
+
+- **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
+- **Tests** are limited to the adapter smoke script; there is no unit or end-to-end suite and no CI workflow yet.
+- **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
+- **Rate limiting** does not exist yet on generation, upload, or auth routes.
+- **Quota** is a lifetime free allowance of 5 units; it does not reset monthly.
+- **Lint** still reports pre-existing issues in files not covered by recent work.
+- The free-quota path has not been exercised against a live MongoDB here; it is statically verified only.
+
+## Roadmap
+
+1. Real asset metadata, Open Graph tags, favicon, and per-route titles.
+2. Rate limiting, webhook idempotency, and a global error boundary.
+3. Unit/integration tests and CI, then an end-to-end demo dry run.
+4. Image editing (background removal, inpainting) behind verified providers.
+5. Video only after image workflows and unit economics are validated.
+
+The full product direction lives in [AGENTS.md](AGENTS.md).
+
+## Contributing
+
+```bash
+git checkout -b feature/your-feature
+bun run typecheck && bun run lint && bun run smoke
+bun run build
 ```
 
-## 🛠️ Development Setup
+Then open a pull request against `main`. Keep changes small and include the commands you ran.
 
-### Node.js / JavaScript
-1. Install Node.js (v18+ recommended)
-2. Install dependencies: `npm install` (or `yarn` / `pnpm install` / `bun install`)
-3. Start the dev server: see the **Quick Start** above
+## Contributors
 
-## 👥 Contributors
-
-Thanks to everyone who has contributed to this project:
-
-<p align="left">
 <a href="https://github.com/ni3420" title="ni3420"><img src="https://avatars.githubusercontent.com/u/205111912?v=4&s=64" width="64" height="64" alt="ni3420" style="border-radius:50%" /></a>
-</p>
 
-[See the full list of contributors →](https://github.com/ni3420/vision/graphs/contributors)
-
-## 👥 Contributing
-
-Contributions are welcome! Here's the standard flow:
-
-1. **Fork** the repository
-2. **Clone** your fork: `git clone https://github.com/ni3420/vision.git`
-3. **Branch**: `git checkout -b feature/your-feature`
-4. **Commit**: `git commit -m 'feat: add some feature'`
-5. **Push**: `git push origin feature/your-feature`
-6. **Open** a pull request
-
-
-
-</div>
+[See the full list of contributors](https://github.com/ni3420/vision/graphs/contributors)

@@ -16,7 +16,12 @@ import {
 } from "lucide-react";
 import Plan from "@/components/plan";
 
-const NAV_ITEMS = [
+const NAV_ITEMS: {
+  label: string;
+  icon: typeof LayoutDashboard;
+  href: string;
+  soon?: boolean;
+}[] = [
   {
     label: "Dashboard",
     icon: LayoutDashboard,
@@ -31,6 +36,7 @@ const NAV_ITEMS = [
     label: "Video Generator",
     icon: Video,
     href: "/video-generator",
+    soon: true,
   },
   {
     label: "Conversation",
@@ -99,6 +105,11 @@ const SideBar = () => {
                 isActive ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"
               }`} />
               <span>{item.label}</span>
+              {item.soon && (
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                  Soon
+                </span>
+              )}
             </Link>
           );
         })}

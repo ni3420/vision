@@ -4,9 +4,10 @@ import { InferResponseType } from "hono"
 
 type ResponseType = InferResponseType<typeof client.api.auth.current["$get"], 200>
 
-export const useCurrentUser = () => {
+export const useCurrentUser = (options?: { enabled?: boolean }) => {
   return useQuery<ResponseType, Error>({
     queryKey: ["current-user"],
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const res = await client.api.auth.current["$get"]()
       

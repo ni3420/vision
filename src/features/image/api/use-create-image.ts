@@ -33,6 +33,7 @@ export const useCreateImage = () => {
       toast.success("Image generated successfully!")
       queryClient.invalidateQueries({ queryKey: ["current-user"] })
       queryClient.invalidateQueries({ queryKey: ["image-history"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] })
     },
     onError: (err: ApiError) => {
       if (err?.status === 403) {

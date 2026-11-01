@@ -53,6 +53,7 @@ misleading claim.
 | AI | Provider adapters in `src/server/ai/` (Cloudflare image, Groq/Gemini chat, Treblo music, local mock mode) |
 | Storage | `src/server/storage.ts` (S3/R2 driver, local dev driver); `Asset` + `UsageLedger` models |
 | Package manager | Bun (`bun.lock`); scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `smoke` |
+| Local database | `docker compose up -d` → `mongo:7` on `127.0.0.1:27017`, volume `mongo-data`, `DB_URL=mongodb://127.0.0.1:27017/vision` |
 
 ### 2.2 Feature status
 
@@ -60,7 +61,7 @@ misleading claim.
 |---|---|---|---|
 | Dashboard | `/` | Works | Analytics console reading 4 queries; image rows now carry `createdAt` |
 | Image studio | `/image-generator` | Works (mock-capable) | Cloudflare JSON parsed and normalized with sharp; bytes in object storage; 1–2 images per request |
-| Video studio | `/video-generator` | Placeholder | No provider, no API; claims "4K" and "Q3 2026" (D10) |
+| Video studio | `/video-generator` | Placeholder | No provider and no free API; page states that plainly and links to images. Nav shows a "Soon" badge; no release dates |
 | Conversation | `/conversation` | Works (mock-capable) | Groq → Gemini fallback; history capped at 12 turns; no streaming |
 | Music studio | `/music-generator` | Works (mock-capable) | Treblo polling; bytes in object storage; local WAV mock |
 | Billing | `/api/stripe` | Works | Checkout + 3 webhook events; no idempotency (D8); no customer portal |
@@ -87,6 +88,12 @@ Fixed on 2026-11-01:
   including a session's initial message; an empty session creation is free.
 - **D11 — image chart never counts images.** Image responses are objects with `id`, `url`,
   `width`, `height`, `prompt`, `provider`, `model`, and `createdAt`.
+- **D9 — misleading README.** Rewritten 2026-11-01: real stack (Cloudflare/Groq/Gemini/Treblo),
+  real routes, current tree, env table, mock-mode rules, honest limitations. The live-demo and
+  OpenAI claims are gone; the deployment URL is marked as possibly lagging the default branch.
+- **D10 — stale product claims.** Video page rewritten 2026-11-01: states that no provider is
+  configured, removes "4K", motion controls, GPU priority, and the past Q3 2026 date, and links
+  to the image generator.
 
 Still open:
 
@@ -94,10 +101,6 @@ Still open:
 - **D8 — no webhook idempotency.** `src/features/Subscription/server/route.ts:85` applies events
   without recording event IDs; duplicate deliveries are harmless for `plan: "PRO"` but unsafe
   once credits/periods exist.
-- **D9 — misleading README.** `README.md` claims OpenAI integration and a live demo; the code
-  uses Groq/Gemini/Treblo/Cloudflare. Rewrite it in §11.
-- **D10 — stale product claims.** Video page says "Expected Release: Q3 2026" (now past) and
-  promises 4K/motion controls that do not exist.
 - **D12 — dev-only origin in production config.** `next.config.ts:6` hardcodes an ngrok host.
 
 Gates after the 2026-11-01 fixes: `tsc --noEmit` clean, `bun run build` succeeds, and lint is
@@ -447,7 +450,8 @@ bun run dev -- -p 3001                           # port 3000 is usually the Form
 3. ~~Fix D3~~ — done 2026-11-01: Cloudflare JSON parsing + sharp normalization.
 4. ~~Fix D4~~ — done 2026-11-01: bytes in storage, metadata in Mongo, size/count caps.
 5. ~~Fix D5/D6~~ — done 2026-11-01: atomic reserve/settle/refund with `UsageLedger`.
-6. **Remove D9/D10** — rewrite README with the real stack; replace the video page's false claims.
+6. ~~Remove D9/D10~~ — done 2026-11-01: README rewritten against the real stack; video page is
+   an honest unavailable state with a "Soon" nav badge.
 7. ~~Add `.env.example`~~ — done 2026-11-01.
 8. ~~Fix D11~~ — done 2026-11-01: image responses are metadata objects.
 9. **Add metadata** — real description, Open Graph image, favicon, page titles per route.
