@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { User } from "@/models/user.models";
 import { UsageLedger, type UsageKind } from "@/models/usage-ledger.models";
+import { FREE_GENERATION_LIMIT } from "@/lib/plans";
 
-export const FREE_GENERATION_LIMIT = 5;
+export { FREE_GENERATION_LIMIT };
 
 export type QuotaKind = UsageKind;
 

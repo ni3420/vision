@@ -9,7 +9,8 @@ export class ProviderCallError extends Error {
 
   constructor(
     message: string,
-    readonly provider: string
+    readonly provider: string,
+    readonly retryable = false
   ) {
     super(message);
     this.name = "ProviderCallError";

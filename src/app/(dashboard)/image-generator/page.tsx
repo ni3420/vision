@@ -1,68 +1,77 @@
 "use client"
 
-import React, { useState } from "react"
+import { useState } from "react"
 import { History, Sliders } from "lucide-react"
+
 import CreateImageForm from "@/features/image/components/create-image-form"
 import ImageHistory from "@/features/image/components/image-history"
+import { useCurrentUser } from "@/features/auth/api/use-current-user"
+import { FREE_GENERATION_LIMIT } from "@/lib/plans"
+import { cn } from "@/lib/utils"
+
+const TABS = [
+  { id: "generate", label: "Generate", Icon: Sliders },
+  { id: "history", label: "History", Icon: History },
+] as const
 
 const Page = () => {
   const [activeView, setActiveView] = useState<"generate" | "history">("generate")
+  const { data } = useCurrentUser()
+
+  const user = data?.data
+  const isPro = user?.plan === "PRO"
+  const remaining = Math.max(0, FREE_GENERATION_LIMIT - (user?.freeUsesCount ?? 0))
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-card border rounded-3xl shadow-xl shadow-slate-100 dark:shadow-none relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl pointer-events-none" />
+    <div className="mx-auto w-full max-w-3xl space-y-5">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground">
-            Neural Image Studio
+            Image generator
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Switch between the real-time structural prompt engine and your historic compiled generation models.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Describe the image, choose a size, generate.
           </p>
         </div>
 
-        <div className="flex items-center bg-secondary/60 border border-border/80 rounded-xl p-1 relative z-10 shrink-0 select-none">
-          <button
-            type="button"
-            onClick={() => setActiveView("generate")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 outline-none cursor-pointer ${
-              activeView === "generate"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Sliders className="h-3.5 w-3.5" />
-            <span>Generate Studio</span>
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setActiveView("history")}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 outline-none cursor-pointer ${
-              activeView === "history"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <History className="h-3.5 w-3.5" />
-            <span>Render History</span>
-          </button>
-        </div>
+        {user ? (
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-semibold text-primary">
+            {isPro ? "Pro · unlimited" : `${remaining} of ${FREE_GENERATION_LIMIT} free left`}
+          </span>
+        ) : null}
+      </header>
+
+      <div
+        role="group"
+        aria-label="Image views"
+        className="flex w-fit items-center gap-1 rounded-xl border border-border bg-secondary/50 p-1"
+      >
+        {TABS.map(({ id, label, Icon }) => {
+          const active = activeView === id
+
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveView(id)}
+              aria-pressed={active}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </button>
+          )
+        })}
       </div>
 
-      <div className="w-full transition-all duration-300">
-        {activeView === "generate" ? (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <CreateImageForm />
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="bg-card border rounded-3xl p-6 shadow-xl shadow-slate-100 dark:shadow-none">
-              <ImageHistory />
-            </div>
-          </div>
-        )}
-      </div>
+      <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-6">
+        {activeView === "generate" ? <CreateImageForm /> : <ImageHistory />}
+      </section>
     </div>
   )
 }

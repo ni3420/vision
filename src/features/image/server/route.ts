@@ -14,10 +14,13 @@ import {
   ProviderNotConfiguredError,
 } from "@/server/ai/runtime";
 import {
+  StorageNotConfiguredError,
+  StorageUploadError,
   buildObjectKey,
   deleteObject,
   getObjectUrl,
   putObject,
+  storageDriver,
 } from "@/server/storage";
 import { Asset, type IAsset } from "@/models/asset.models";
 
@@ -88,19 +91,25 @@ const app = new Hono()
           )
         );
 
-        const stored: { key: string; asset: IAsset & { _id: unknown } }[] = [];
+        const stored: {
+          key: string;
+          url?: string;
+          asset: IAsset & { _id: unknown };
+        }[] = [];
 
         try {
           for (const result of results) {
             const extension = result.mime === "image/png" ? "png" : "jpg";
             const key = buildObjectKey(auth.userId, "image", extension);
 
-            await putObject(key, result.bytes, result.mime);
+            const object = await putObject(key, result.bytes, result.mime);
 
             const asset = await Asset.create({
               userId: auth.userId,
               kind: "image",
               objectKey: key,
+              url: object.url,
+              storage: storageDriver(),
               mime: result.mime,
               bytes: result.bytes.byteLength,
               width: result.width,
@@ -111,7 +120,7 @@ const app = new Hono()
               visibility: "private",
             });
 
-            stored.push({ key, asset });
+            stored.push({ key, url: object.url, asset });
           }
         } catch (error) {
           await Promise.all(stored.map(({ key }) => deleteObject(key)));
@@ -119,8 +128,8 @@ const app = new Hono()
         }
 
         const images = await Promise.all(
-          stored.map(async ({ key, asset }) =>
-            serializeAsset(asset, await getObjectUrl(key))
+          stored.map(async ({ url, asset }) =>
+            serializeAsset(asset, await getObjectUrl(asset.objectKey, url))
           )
         );
 
@@ -141,8 +150,31 @@ const app = new Hono()
         }
         if (error instanceof ProviderCallError) {
           return c.json(
-            { success: false, code: error.code, error: error.message },
+            {
+              success: false,
+              code: error.code,
+              error: error.message,
+              retryable: error.retryable,
+            },
             502
+          );
+        }
+        if (error instanceof StorageUploadError) {
+          console.error(`Image storage failed (${error.driver}):`, error.message);
+          return c.json(
+            {
+              success: false,
+              code: error.code,
+              error: "The image was generated but could not be saved. Try again.",
+              retryable: true,
+            },
+            502
+          );
+        }
+        if (error instanceof StorageNotConfiguredError) {
+          return c.json(
+            { success: false, code: error.code, error: error.message, retryable: false },
+            503
           );
         }
         console.error("Image generation failed:", error);
@@ -170,7 +202,7 @@ const app = new Hono()
 
       const images = await Promise.all(
         assets.map(async (asset) =>
-          serializeAsset(asset, await getObjectUrl(asset.objectKey))
+          serializeAsset(asset, await getObjectUrl(asset.objectKey, asset.url))
         )
       );
 

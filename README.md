@@ -17,7 +17,8 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Surface | State today |
 | --- | --- |
 | Dashboard | Generation entry points, credit usage, plan, and recent activity |
-| Image generation | Cloudflare Workers AI FLUX.1 schnell, 1–2 images per request, private storage |
+| Image generation | Cloudflare Workers AI FLUX.1 schnell, 1–2 images per request, private storage; prompt examples, ratio tiles, cost label, retryable error states |
+| Theming | Light, dark, and system toggle in the navbar (`next-themes`, token-driven) |
 | Conversation | Groq `llama-3.3-70b-versatile` with Gemini `gemini-2.5-flash` fallback |
 | Music generation | Treblo v3, stored as a playable audio asset |
 | Video generation | Not available — no provider is configured or integrated |
@@ -89,7 +90,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY`, or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
 | Music provider | `TREBLO_API_KEY` | For live music |
-| Storage | `STORAGE_DRIVER`, `LOCAL_STORAGE_DIR`, `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` | Local by default |
+| Storage | `STORAGE_DRIVER` (`local` \| `s3` \| `imagekit`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Local by default |
 | Billing | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
 
 ### Mock mode
@@ -105,9 +106,12 @@ In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFI
 ### Storage
 
 - `STORAGE_DRIVER=local` writes to `.data/uploads` (git-ignored) and serves files from `GET /api/assets/:key`, which requires the owning Clerk session.
-- `STORAGE_DRIVER=s3` (or any S3-compatible endpoint such as Cloudflare R2) returns short-lived presigned URLs instead.
+- `STORAGE_DRIVER=s3` works with AWS S3, Cloudflare R2, and **Backblaze B2** (`S3_ENDPOINT=https://s3.<region>.backblazeb2.com`, `S3_REGION=<region>`); reads return short-lived presigned URLs.
+- `STORAGE_DRIVER=imagekit` uploads server-side to ImageKit and stores the durable CDN URL on the asset, so history never depends on a URL that expires. Set `IMAGEKIT_PRIVATE_FILES=true` to upload private files, which are served with signed `ik-t`/`ik-s` URLs instead.
 
-Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ownership is re-checked on every read.
+Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ownership is re-checked on every read. Generated images are stored with their URL in `assets.url`; presigned or signed URLs are never persisted.
+
+Image provider calls retry up to 3 times with exponential backoff on network errors and `408`/`429`/`5xx`; `Retry-After` is honoured. A failed request returns `retryable` in the error body so the UI can offer a retry.
 
 ### Stripe
 
@@ -126,7 +130,7 @@ Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ow
 | `bun run start` | Serve the production build |
 | `bun run typecheck` | `tsc --noEmit` |
 | `bun run lint` | ESLint |
-| `bun run test` | Unit tests (Bun runner): quota, rate limiting, dashboard summary, image schemas, AI mode resolution |
+| `bun run test` | Unit tests (Bun runner): quota, rate limiting, dashboard summary, image schemas, generation error copy, AI mode resolution |
 | `bun run smoke` | Adapter smoke test; forces `AI_MODE=mock` and verifies JPEG bytes, resizing, chat text, WAV output, and a storage round-trip |
 
 ## API
@@ -151,7 +155,7 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `POST` | `/api/stripe` | Create a Checkout session |
 | `POST` | `/api/stripe/webhook` | Stripe events (public, signature-verified) |
 
-Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `RATE_LIMITED` (429), `PROVIDER_NOT_CONFIGURED` (503), and `PROVIDER_CALL_FAILED` (502).
+Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `RATE_LIMITED` (429), `PROVIDER_NOT_CONFIGURED` (503), `STORAGE_NOT_CONFIGURED` (503), `PROVIDER_CALL_FAILED` (502), and `STORAGE_WRITE_FAILED` (502). Provider and storage failures include `retryable`.
 
 ### Request limits
 
@@ -175,7 +179,8 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 ## Known limitations
 
 - **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
-- **Tests** cover quota semantics, rate-limit windows, pure dashboard logic, image schemas, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
+- **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image schemas, generation error copy, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
+- **UI verification** for the image-generator redesign is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
 - **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
 - **Rate limiting** covers the three charged routes only; auth, session creation, checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable.
 - **Quota** is a lifetime free allowance of 5 units; it does not reset monthly. PRO has no usage cap in code.

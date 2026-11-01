@@ -42,6 +42,7 @@ Read this file before changing code. Then:
 |---|---|---|
 | Framework | Next.js `16.2.10`, App Router, `src/app` | Turbopack dev; `output: "standalone"` |
 | UI | React `19.2.4`, Tailwind CSS v4, shadcn/ui **`base-nova`** on **Base UI** (`@base-ui/react`), Lucide | `components.json` confirms Base UI, not Radix |
+| Theming | `next-themes` `0.4` with `attribute="class"`, `defaultTheme="system"` | `.dark` on `<html>` drives the oklch tokens in `globals.css` |
 | API | Hono `4.12` mounted at `/api` via `src/app/api/[[...route]]/route.ts` | Node runtime, `force-dynamic` |
 | API client | `hc<AppType>` from `hono/client` in `src/lib/client.ts` | End-to-end typed routes |
 | Server state | **TanStack Query `5.101`** (`src/providers/providers.tsx`) | Single cache; see §9 |
@@ -49,7 +50,7 @@ Read this file before changing code. Then:
 | Database | MongoDB + Mongoose `9.7` | Models in `src/models` |
 | Auth | Clerk `@clerk/nextjs` v7 + `@clerk/hono` | `src/proxy.ts` protects everything except `/auth(.*)` and `/api/stripe(.*)` |
 | Payments | Stripe `22.3` Checkout + webhook | `src/features/Subscription/server/route.ts` |
-| Storage | Local filesystem or S3-compatible (`@aws-sdk/client-s3` v3) | `STORAGE_DRIVER=local \| s3` |
+| Storage | Local filesystem, S3-compatible (`@aws-sdk/client-s3` v3), or ImageKit | `STORAGE_DRIVER=local \| s3 \| imagekit` |
 | Image AI | Cloudflare Workers AI `@cf/black-forest-labs/flux-1-schnell` | `src/server/ai/image.ts` |
 | Chat AI | Groq `llama-3.3-70b-versatile`, Gemini `gemini-2.5-flash` fallback | `src/server/ai/chat.ts` |
 | Music AI | Treblo v3 (`https://api.treblo.com/v1/generations`) | `src/server/ai/music.ts` |
@@ -64,9 +65,9 @@ Read this file before changing code. Then:
 |---|---|---|
 | Types | `bun run typecheck` | **PASS** |
 | Lint | `bun run lint` | **PASS — 0 problems** |
-| Unit tests | `bun run test` | **PASS — 43 tests / 6 files** |
+| Unit tests | `bun run test` | **PASS — 76 tests / 9 files** |
 | Adapters | `bun run smoke` | **PASS** (forces mock mode) |
-| Build | `bun run build` | **PASS** — compiled in 59s, 8 routes (2026-11-01) |
+| Build | `bun run build` | **PASS** — compiled in 19s, 9 routes (2026-11-01) |
 
 One non-blocking Turbopack warning remains for the runtime-computed local storage root
 (`src/server/storage.ts`); it is intentional, not an error.
@@ -75,6 +76,10 @@ One non-blocking Turbopack warning remains for the runtime-computed local storag
 With placeholder Clerk/Stripe/provider values the app builds, but **browser flows are not
 verifiable** (Clerk redirects, Mongo unreachable, providers unconfigured). State that
 limitation explicitly instead of claiming a working UI flow.
+
+The image-generator redesign (2026-11-01) was verified by typecheck, lint, tests, smoke, and
+build only. A live browser pass was **not** possible: `/image-generator` redirects to Clerk
+sign-in and no session or database is available in this environment.
 
 ### 1.3 Known limitations (do not paper over)
 
@@ -100,7 +105,7 @@ state.
 | Route | Surface | Purpose | Real states |
 |---|---|---|---|
 | `/` | Dashboard | Counts, 7-day activity, workload split, plan meter, quick actions | loading skeleton, empty, error + retry |
-| `/image-generator` | Image Studio | Prompt composer, size presets, 1–2 variations, result grid, history tab | idle, pending, success, quota (403), provider error, empty history |
+| `/image-generator` | Image Studio | Prompt textarea with counter and examples, ratio tiles, 1–2 variations, cost label, result grid, history tab | idle (skeletons, error + retry, empty), success, mock badge, quota (403 + upgrade modal) |
 | `/conversation` | Chat | Session list, message thread, composer, delete session | empty, pending reply, error, no session |
 | `/music-generator` | Music Studio | Prompt, 8/15/20 s duration, track player, history | idle, synthesizing, success, quota, provider error |
 | `/video-generator` | Video | Honest "not available yet" explanation with links to working tools | static |
@@ -119,6 +124,9 @@ The sidebar (`src/features/dashboard/components/sidebar.tsx`) and mobile sheet
 - Empty, loading, success, partial-success, error, quota, and offline states are part of
   "done" — not polish.
 - Accessibility is part of done: labels, focus order, contrast, reduced motion, alt text.
+- Both themes are first-class: the navbar toggle offers light, dark, and system; new UI must
+  use the semantic tokens (`bg-card`, `text-muted-foreground`, `border-border`) rather than
+  hard-coded slate/indigo values so it works in both.
 
 ---
 
@@ -140,8 +148,8 @@ Hono app (src/app/api/[[...route]]/route.ts)
   ├── Zod validation (@hono/zod-validator)
   └── Provider adapters (src/server/ai/*)
           │
-          ├── MongoDB: users, assets, conversations, music, usageLedger
-          ├── Storage: local .data/uploads or S3-compatible bucket
+          ├── MongoDB: users, assets, conversations, music, usageLedger, rateLimits
+          ├── Storage: local .data/uploads, S3-compatible bucket, or ImageKit
           └── Providers: Cloudflare, Groq, Gemini, Treblo
 ```
 
@@ -149,7 +157,8 @@ Hono app (src/app/api/[[...route]]/route.ts)
 
 - MongoDB is the source of truth for users, plans, quota counters, ledger, conversations,
   asset metadata, and music metadata.
-- Storage holds bytes only. MongoDB stores object keys, MIME, size, dimensions.
+- Storage holds bytes only. MongoDB stores object keys, MIME, size, dimensions, and the
+  durable ImageKit URL when one exists. Never store a presigned or signed URL.
 - The server is authoritative for auth, ownership, quota, plan, storage keys, and provider
   calls. The browser only displays what the server returns.
 - The browser may hold transient UI state (form drafts, active tab, playing track).
@@ -261,13 +270,24 @@ Rules:
 
 ### 5.2 Storage (`src/server/storage.ts`)
 
-- `storageDriver()` returns `s3` when `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and
-  `S3_SECRET_ACCESS_KEY` exist (or when forced), otherwise `local`.
+- `storageDriver()` returns the explicit `STORAGE_DRIVER` when valid, else `imagekit`
+  when `IMAGEKIT_PRIVATE_KEY` + `IMAGEKIT_URL_ENDPOINT` exist, else `s3` when the
+  `S3_*` quartet exists, otherwise `local`.
 - Object keys are server-generated:
   `users/{userId}/{kind}/{yyyy}/{mm}/{uuid}.{ext}`. Never use a user filename.
 - Local driver writes under `LOCAL_STORAGE_DIR` or `.data/uploads` and is served by
-  `GET /api/assets/:key` after an ownership prefix check.
-- S3 driver returns presigned URLs with a 1-hour expiry. Never persist a signed URL.
+  `GET /api/assets/:key` after an ownership prefix check. No durable URL exists.
+- S3 driver (AWS, R2, **Backblaze B2**) returns presigned URLs with a 1-hour expiry.
+  Never persist a signed URL. B2 uses `S3_ENDPOINT=https://s3.<region>.backblazeb2.com`
+  and `S3_REGION=<region>` (e.g. `us-west-004`), not `auto`.
+- ImageKit driver uploads server-side to `https://upload.imagekit.io/api/v1/files/upload`
+  with Basic auth `PRIVATE_KEY:` and multipart `file`, `fileName`, `folder`,
+  `useUniqueFileName=false`. `imagekitPublicUrl(key)` is `IMAGEKIT_URL_ENDPOINT + "/" + key`.
+- `putObject()` returns `{ key, url? }`. Durable, non-expiring URLs (ImageKit) are stored
+  on `Asset.url`; presigned and signed URLs are **never** persisted — they are derived per
+  response by `getObjectUrl()`.
+- Private ImageKit uploads (`IMAGEKIT_PRIVATE_FILES=true`) are served with a signed URL:
+  HMAC-SHA1 of `pathname + expiry` with the private key, exposed as `ik-s` + `ik-t`.
 - Delete the object when metadata creation fails; orphan cleanup is best-effort.
 - Keep `isOwnedKey()` checks on every asset read.
 
@@ -341,6 +361,18 @@ Rules:
 | Video | none | do not add controls |
 
 Verify live provider docs before changing model IDs, params, prices, or limits.
+
+### 7.3 Retry policy (`src/server/ai/retry.ts`)
+
+- Retry network errors, `408`, `429`, `500`, `502`, `503`, `504` only. A `400`/`401`/`403`
+  is permanent — retrying it wastes quota and time.
+- Default 3 attempts, exponential backoff with jitter (250 ms → 1 s), capped by
+  `Retry-After` when the provider sends one.
+- Each attempt gets its own `AbortSignal.timeout`; a timeout is a retryable network error.
+- Every adapter already normalizes failures to `ProviderCallError` (502) or
+  `ProviderNotConfiguredError` (503). Retry inside the adapter, never in the route.
+- `ProviderCallError.retryable` is surfaced in the error body so the UI knows whether to
+  offer a retry button.
 
 ---
 
@@ -447,7 +479,8 @@ auth identity, plan, quota, conversations, assets, private URLs, or secrets in i
 
 ### 10.1 What exists
 
-- `bun test` — colocated `*.test.ts` files. Current: quota semantics, dashboard summary,
+- `bun test` — colocated `*.test.ts` files. Current: quota semantics, rate-limit windows
+  and guard headers, retry/backoff, ImageKit signing and upload, dashboard summary,
   distribution, image schemas, AI mode resolution.
 - `bun run smoke` — runs `scripts/smoke-adapters.ts` with `AI_MODE=mock`; asserts JPEG
   magic bytes, sharp resize, chat text, RIFF WAV, and a local storage round-trip.
@@ -570,10 +603,13 @@ rewrite the backend to make it look different.
 ### Phase B — Product honesty and UI polish
 
 - [ ] Replace remaining hard-coded values (quota limit in `Plan`) with server data.
-- [ ] Add a real image error state (503/502) beside the upgrade modal.
+- [x] Add a real image error state (503/502) beside the upgrade modal, with retry when the
+      server marks the failure `retryable` (2026-11-01).
 - [ ] Make chat composer a textarea with Enter/Shift+Enter hint.
-- [ ] Show the active provider/mock badge on each studio when `mock: true`.
-- [ ] Keyboard and 320 px pass across all five surfaces; both themes.
+- [x] Show the active provider/mock badge on the image studio when `mock: true` (2026-11-01);
+      chat and music still need it.
+- [x] Light/dark/system theme toggle in the navbar (2026-11-01).
+- [ ] Keyboard and 320 px pass across all five surfaces; manual pass in both themes.
 - [ ] Add `loading.tsx` / `error.tsx` boundaries per segment.
 
 ### Phase C — Reliability
@@ -618,7 +654,7 @@ If a step is unavailable in the demo environment, say why instead of staging a f
 | Server state | TanStack Query (already present) | A demonstrated need for a different cache |
 | Client state | Local state; no Zustand | Shared UI state spans distant components |
 | Component base | shadcn `base-nova` on Base UI | A component cannot meet a11y/design needs |
-| Storage | Local or S3-compatible via one adapter | B2/ImageKit/CDN becomes a requirement |
+| Storage | Local, S3-compatible (AWS/R2/B2), or ImageKit via one adapter | A CDN requirement the adapter cannot meet |
 | Image provider | Cloudflare FLUX.1 schnell | Quality, cost, or latency no longer fit |
 | Chat provider | Groq first, Gemini fallback | Rate limits or quality change |
 | Music provider | Treblo v3 | Contract, quality, or cost changes |
@@ -627,6 +663,7 @@ If a step is unavailable in the demo environment, say why instead of staging a f
 | PRO quota | No cap in code; copy says "no free-tier cap" | A fair-use policy is enforced |
 | Tests | Bun built-in runner | Team standardizes on another runner |
 | Rate limits | Mongo fixed window, fail-open | Redis or an edge limiter is available |
+| Theming | `next-themes`, `.dark` class, system default | Theme must be server-resolved per request |
 
 ---
 

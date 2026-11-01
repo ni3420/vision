@@ -6,11 +6,16 @@ import {
   resolveMode,
   warnMock,
 } from "./runtime";
+import { fetchWithRetry, isRetryableStatus, type FetchLike } from "./retry";
 import type { ImageGenerationRequest, ImageGenerationResult } from "./types";
 
 const CF_MODEL = "@cf/black-forest-labs/flux-1-schnell";
 const CF_FALLBACK_MODEL = "flux-1-schnell";
 const TIMEOUT_MS = 60_000;
+
+// A fresh AbortSignal per attempt, so a timed-out attempt cannot poison the retry.
+const fetchWithTimeout: FetchLike = (input, init) =>
+  fetch(input, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
 
 function cloudflareEndpoint(): string {
   const explicit = process.env.CLOUDFARE_URL?.trim();
@@ -81,24 +86,33 @@ async function callCloudflare(
   const endpoint = cloudflareEndpoint();
   const token = cloudflareToken();
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    body: JSON.stringify({
-      prompt: `${prompt}, high quality, detailed, aspect ratio ${width}:${height}`,
-      steps: 4,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: `${prompt}, high quality, detailed, aspect ratio ${width}:${height}`,
+        steps: 4,
+      }),
+    }, { fetchImpl: fetchWithTimeout });
+  } catch (error) {
+    throw new ProviderCallError(
+      `Cloudflare image request failed: ${(error as Error).message}`,
+      "cloudflare",
+      true
+    );
+  }
 
   if (!response.ok) {
     const detail = (await response.text().catch(() => "")).slice(0, 300);
     throw new ProviderCallError(
       `Cloudflare image request failed (${response.status}): ${detail}`,
-      "cloudflare"
+      "cloudflare",
+      isRetryableStatus(response.status)
     );
   }
 
@@ -110,7 +124,8 @@ async function callCloudflare(
     if (!base64) {
       throw new ProviderCallError(
         "Cloudflare image response did not contain image data",
-        "cloudflare"
+        "cloudflare",
+        true
       );
     }
     return Buffer.from(base64, "base64");
@@ -127,7 +142,8 @@ async function callCloudflare(
 
   throw new ProviderCallError(
     `Cloudflare image response had unexpected content type "${contentType}"`,
-    "cloudflare"
+    "cloudflare",
+    true
   );
 }
 

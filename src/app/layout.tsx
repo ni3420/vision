@@ -4,7 +4,7 @@ import "./globals.css";
 import {ClerkProvider} from "@clerk/nextjs"
 import Providers from "@/providers/providers";
 import {ui} from "@clerk/ui"
-import { Toaster } from "sonner";
+import { ThemeToaster } from "@/components/theme-toaster";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,6 +33,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body >
@@ -40,7 +41,7 @@ export default function RootLayout({
 
         <Providers>
           {children}
-          <Toaster richColors position="top-right" />
+          <ThemeToaster />
         </Providers>
     </ClerkProvider>
 

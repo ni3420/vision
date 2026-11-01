@@ -9,6 +9,21 @@ type RequestType = InferRequestType<typeof client.api.image["$post"]>
 
 export interface ApiError extends Error {
   status?: number
+  code?: string
+  retryable?: boolean
+}
+
+interface ErrorBody {
+  code?: string
+  error?: string
+  retryable?: boolean
+}
+
+function apiError(
+  message: string,
+  extra: { status?: number; code?: string; retryable?: boolean }
+): ApiError {
+  return Object.assign(new Error(message), extra)
 }
 
 export const useCreateImage = () => {
@@ -16,31 +31,35 @@ export const useCreateImage = () => {
 
   return useMutation<ResponseType, ApiError, RequestType>({
     mutationFn: async ({ json }) => {
-      const res = await client.api.image["$post"](
-        { json },
-        { headers: { "Idempotency-Key": newIdempotencyKey() } }
-      )
+      let res
+      try {
+        res = await client.api.image["$post"](
+          { json },
+          { headers: { "Idempotency-Key": newIdempotencyKey() } }
+        )
+      } catch {
+        throw apiError("Couldn't reach the server", {
+          code: "NETWORK_ERROR",
+          retryable: true,
+        })
+      }
 
       if (!res.ok) {
-        const error = new Error("Could not generate image assets from neural engine pipeline") as ApiError
-        error.status = res.status
-        throw error
+        const body = (await res.json().catch(() => null)) as ErrorBody | null
+        throw apiError(body?.error || "Image generation failed", {
+          status: res.status,
+          code: body?.code,
+          retryable: body?.retryable,
+        })
       }
 
       return await res.json()
     },
     onSuccess: () => {
-      toast.success("Image generated successfully!")
+      toast.success("Image generated")
       queryClient.invalidateQueries({ queryKey: ["current-user"] })
       queryClient.invalidateQueries({ queryKey: ["image-history"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] })
-    },
-    onError: (err: ApiError) => {
-      if (err?.status === 403) {
-        toast.error("Limit reached. Please upgrade your plan.")
-      } else {
-        toast.error("Failed to generate image. Please try again later.")
-      }
     },
   })
 }

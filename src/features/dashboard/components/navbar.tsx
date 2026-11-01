@@ -3,6 +3,7 @@
 import React from "react"
 import { UserButton } from "@clerk/nextjs"
 import MobileSidebar from "./mobile-sidebar"
+import ThemeToggle from "@/components/theme-toggle"
 
 const NavBar = () => {
   return (
@@ -12,6 +13,7 @@ const NavBar = () => {
       </div>
 
       <div className="flex items-center gap-3">
+        <ThemeToggle />
         <UserButton />
       </div>
     </header>

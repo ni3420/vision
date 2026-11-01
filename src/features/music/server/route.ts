@@ -23,7 +23,7 @@ type MusicRecord = IMusic & { _id: unknown };
 
 async function serializeTrack(track: MusicRecord) {
   const url = track.objectKey
-    ? await getObjectUrl(track.objectKey)
+    ? await getObjectUrl(track.objectKey, track.audioUrl || undefined)
     : track.audioUrl;
 
   return {
@@ -93,13 +93,13 @@ const app = new Hono()
         const extension = result.mime.includes("wav") ? "wav" : "mp3";
         const key = buildObjectKey(auth.userId, "music", extension);
 
-        await putObject(key, result.bytes, result.mime);
+        const object = await putObject(key, result.bytes, result.mime);
 
         try {
           const track = await Music.create({
             userId: auth.userId,
             prompt,
-            audioUrl: "",
+            audioUrl: object.url ?? "",
             objectKey: key,
             provider: result.provider,
             model: result.model,

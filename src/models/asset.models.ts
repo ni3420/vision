@@ -6,6 +6,9 @@ export interface IAsset {
   userId: string;
   kind: AssetKind;
   objectKey: string;
+  /** Durable public URL (ImageKit). Never a presigned or signed URL. */
+  url?: string;
+  storage?: "local" | "s3" | "imagekit";
   mime: string;
   bytes: number;
   width?: number;
@@ -24,6 +27,8 @@ const AssetSchema = new Schema<IAsset>(
     userId: { type: String, required: true, index: true },
     kind: { type: String, enum: ["image", "music"], required: true },
     objectKey: { type: String, required: true, unique: true },
+    url: { type: String },
+    storage: { type: String, enum: ["local", "s3", "imagekit"] },
     mime: { type: String, required: true },
     bytes: { type: Number, required: true, min: 1 },
     width: { type: Number },

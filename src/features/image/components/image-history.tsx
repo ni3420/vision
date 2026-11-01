@@ -1,130 +1,152 @@
 "use client"
 
-import React from "react"
 import Image from "next/image"
-import { Download, Sparkles, Loader2, AlertCircle, RefreshCw, LayoutGrid } from "lucide-react"
+import { AlertCircle, Download, ImageIcon, RefreshCw } from "lucide-react"
+import { toast } from "sonner"
+
+import { Button } from "@/components/ui/button"
 import { useImageHistory } from "../api/use-image-history"
+import { downloadImage } from "../lib/download"
 import type { GeneratedImage } from "./images-view"
 
-export const ImageHistory = () => {
-  const { data, isPending, isError, refetch } = useImageHistory()
+const SKELETON_COUNT = 8
 
-  const handleDownload = async (imgUrl: string, index: number) => {
+export const ImageHistory = () => {
+  const { data, isPending, isError, refetch, isRefetching } = useImageHistory()
+
+  const handleDownload = async (url: string, index: number) => {
     try {
-      const response = await fetch(imgUrl)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = `vision-history-${index + 1}.png`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error("Failed to compile layout image file stream asset:", error)
+      await downloadImage(url, `vision-history-${index + 1}.png`)
+    } catch {
+      toast.error("Couldn't download the image. Try again.")
     }
   }
 
   if (isPending) {
     return (
-      <div className="w-full flex flex-col items-center justify-center min-h-[400px] bg-card border border-border/60 rounded-3xl p-8">
-        <Loader2 className="h-6 w-6 text-primary animate-spin mb-3" />
-        <p className="text-xs text-muted-foreground font-medium">
-          Retrieving historical variant pipelines...
-        </p>
-      </div>
+      <section className="space-y-3">
+        <HistoryHeader />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          {Array.from({ length: SKELETON_COUNT }, (_, index) => (
+            <div
+              key={index}
+              className="relative aspect-[4/5] overflow-hidden rounded-xl border border-border bg-muted"
+            >
+              <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-muted via-muted-foreground/10 to-muted" />
+            </div>
+          ))}
+        </div>
+      </section>
     )
   }
 
   if (isError) {
     return (
-      <div className="w-full flex flex-col items-center justify-center min-h-[400px] bg-card border border-destructive/20 rounded-3xl p-8 gap-4">
-        <div className="flex flex-col items-center text-center max-w-xs space-y-2">
-          <AlertCircle className="h-6 w-6 text-destructive" />
-          <h3 className="text-sm font-bold text-foreground">Sync Error</h3>
-          <p className="text-xs text-muted-foreground">
-            Could not retrieve generation framework models from the active database cache.
+      <section className="space-y-3">
+        <HistoryHeader />
+        <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-destructive/25 bg-destructive/5 p-8 text-center">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+            <AlertCircle className="size-5" />
+          </span>
+          <h3 className="mt-3 text-sm font-semibold text-foreground">
+            Couldn&apos;t load your history
+          </h3>
+          <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+            Check your connection and try again. Your images are still saved.
           </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="mt-3"
+          >
+            <RefreshCw />
+            {isRefetching ? "Retrying…" : "Try again"}
+          </Button>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-secondary hover:bg-secondary/80 border rounded-xl transition-all duration-200 cursor-pointer"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          <span>Retry Synchronization</span>
-        </button>
-      </div>
+      </section>
     )
   }
 
   const images: GeneratedImage[] = data?.images ?? []
-  const hasImages = images.length > 0
 
-  if (!hasImages) {
+  if (images.length === 0) {
     return (
-      <div className="w-full flex flex-col items-center justify-center min-h-[400px] bg-card border border-dashed border-border/80 rounded-3xl p-8 text-center bg-secondary/10">
-        <div className="max-w-xs space-y-3 flex flex-col items-center">
-          <div className="h-11 w-11 rounded-xl bg-secondary/50 border border-border flex items-center justify-center text-muted-foreground/60">
-            <Sparkles className="h-5 w-5" />
-          </div>
-          <h3 className="text-sm font-bold text-foreground">Canvas Matrix Empty</h3>
-          <p className="text-xs font-medium text-muted-foreground/80 leading-relaxed">
-            Your historic generation frames will appear here once compiled through the neural studio framework pipeline.
+      <section className="space-y-3">
+        <HistoryHeader />
+        <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-secondary/20 p-8 text-center">
+          <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground">
+            <ImageIcon className="size-5" />
+          </span>
+          <h3 className="mt-3 text-sm font-semibold text-foreground">No images yet</h3>
+          <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+            Images you generate are saved here with the prompt and settings used.
           </p>
         </div>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="w-full space-y-6">
-      <div className="flex items-center justify-between border-b border-border/60 pb-3">
-        <div className="flex items-center gap-2">
-          <LayoutGrid className="h-4 w-4 text-primary" />
-          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Historical Render Library
-          </span>
-        </div>
-        <span className="text-xs font-bold bg-secondary border px-2.5 py-0.5 rounded-md text-foreground">
-          {images.length} Compiled Variations
-        </span>
-      </div>
+    <section className="space-y-3">
+      <HistoryHeader count={images.length} />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {images.map((image, index) => (
-          <div
-            key={image.id}
-            className="relative aspect-[232/300] w-full overflow-hidden rounded-2xl border border-border/80 shadow-md bg-secondary/20 transition-all duration-300 group hover:scale-[1.02] hover:border-primary/50"
-          >
-            <Image
-              src={image.url}
-              alt={image.prompt || `Historical Variant Output Index ${index + 1}`}
-              fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
-              unoptimized
-            />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        {images.map((image, index) => {
+          const width = image.width ?? 232
+          const height = image.height ?? 300
 
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2.5">
-              <div className="flex items-center justify-between w-full">
-                <span className="text-[10px] font-bold text-white/90 tracking-wide">
-                  #{index + 1}
-                </span>
+          return (
+            <figure
+              key={image.id}
+              className="group relative overflow-hidden rounded-xl border border-border bg-muted"
+              title={image.prompt || undefined}
+            >
+              <div className="relative" style={{ aspectRatio: `${width} / ${height}` }}>
+                <Image
+                  src={image.url}
+                  alt={image.prompt || `Historical image ${index + 1}`}
+                  fill
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                  className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  unoptimized
+                />
 
-                <button
-                  type="button"
-                  onClick={() => handleDownload(image.url, index)}
-                  className="p-1.5 rounded-lg bg-white text-slate-900 hover:bg-slate-100 shadow-xl transition-all duration-200 active:scale-95 flex items-center justify-center cursor-pointer"
-                  aria-label="Export raw image stream matrix"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </button>
+                <div className="absolute inset-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/60 via-transparent to-transparent p-2 opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100">
+                  <span className="text-[10px] font-semibold text-white">
+                    #{index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(image.url, index)}
+                    aria-label={`Download image ${index + 1}`}
+                    className="flex size-6 items-center justify-center rounded-md bg-white text-slate-900 shadow transition-transform active:scale-95"
+                  >
+                    <Download className="size-3" />
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            </figure>
+          )
+        })}
       </div>
+    </section>
+  )
+}
+
+function HistoryHeader({ count }: { count?: number }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[11px] font-semibold text-muted-foreground">
+        History
+      </span>
+      {count !== undefined ? (
+        <span className="rounded-md border border-border bg-secondary/40 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+          {count} image{count === 1 ? "" : "s"}
+        </span>
+      ) : null}
     </div>
   )
 }
