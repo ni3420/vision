@@ -7,9 +7,9 @@ import { useClerk } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { 
   ImageIcon, 
-  Video, 
-  MessageSquare, 
-  Music, 
+  Clapperboard, 
+  MessagesSquare, 
+  AudioLines, 
   LayoutDashboard,
   LogOut,
   Loader2
@@ -34,18 +34,18 @@ const NAV_ITEMS: {
   },
   {
     label: "Video Generator",
-    icon: Video,
+    icon: Clapperboard,
     href: "/video-generator",
     soon: true,
   },
   {
     label: "Conversation",
-    icon: MessageSquare,
+    icon: MessagesSquare,
     href: "/conversation",
   },
   {
     label: "Music Generator",
-    icon: Music,
+    icon: AudioLines,
     href: "/music-generator",
   },
 ];

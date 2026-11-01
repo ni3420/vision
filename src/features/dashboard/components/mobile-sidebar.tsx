@@ -7,9 +7,9 @@ import {
   Menu,
   LayoutDashboard,
   ImageIcon,
-  Video,
-  MessageSquare,
-  Music,
+  Clapperboard,
+  MessagesSquare,
+  AudioLines,
 } from "lucide-react"
 
 import {
@@ -39,18 +39,18 @@ const NAV_ITEMS: {
   },
   {
     label: "Video Generator",
-    icon: Video,
+    icon: Clapperboard,
     href: "/video-generator",
     soon: true,
   },
   {
     label: "Conversation",
-    icon: MessageSquare,
+    icon: MessagesSquare,
     href: "/conversation",
   },
   {
     label: "Music Generator",
-    icon: Music,
+    icon: AudioLines,
     href: "/music-generator",
   },
 ]

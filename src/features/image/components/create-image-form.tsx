@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Sparkles } from "lucide-react"
+import { ArrowUpRight } from "lucide-react"
 import * as z from "zod"
 
 import { Button } from "@/components/ui/button"
@@ -237,7 +237,7 @@ export const CreateImageForm = () => {
             disabled={isPending}
             className="h-11 w-full rounded-xl bg-gradient-to-b from-primary to-primary/80 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:from-primary/90 hover:to-primary/70"
           >
-            <Sparkles className="size-4" />
+            <ArrowUpRight className="size-4" />
             {isPending ? "Generating…" : "Generate"}
             <span className="text-[11px] font-medium text-primary-foreground/80">
               · {costLabel}

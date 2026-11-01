@@ -47,6 +47,56 @@ export function parseRetryAfter(value: string | null, now = Date.now()): number 
   return Math.max(0, date - now);
 }
 
+export interface CallRetryOptions {
+  /** Total attempts, including the first one. */
+  attempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  /** Return false for errors that must not be retried (e.g. a 400 or 401). */
+  isRetryable?: (error: unknown) => boolean;
+  onRetry?: (info: {
+    attempt: number;
+    delayMs: number;
+    error: unknown;
+  }) => void;
+}
+
+/**
+ * Bounded retry for SDK calls that throw instead of returning a `Response`.
+ * The caller decides which errors are transient via `isRetryable`.
+ */
+export async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  options: CallRetryOptions = {}
+): Promise<T> {
+  const {
+    attempts = 3,
+    baseDelayMs = 250,
+    maxDelayMs = 2000,
+    sleep = wait,
+    isRetryable = () => true,
+    onRetry,
+  } = options;
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isRetryable(error)) throw error;
+
+      const delayMs = backoffDelay(attempt, baseDelayMs, maxDelayMs);
+      onRetry?.({ attempt, delayMs, error });
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError ?? new Error("retryWithBackoff exhausted without an error");
+}
+
 /**
  * `fetch` with bounded retries for network errors and transient HTTP statuses.
  * A 4xx other than 408/429 is returned immediately — retrying it only burns time.

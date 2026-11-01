@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { MessageSquare, Trash2, Clock, Sparkles, Loader2, Plus } from "lucide-react"
+import { MessageSquare, MessagesSquare, Trash2, Clock, Loader2, Plus } from "lucide-react"
 import { useGetConversations } from "../api/use-get-all-conversation"
 import { useDeleteConversation } from "../api/use-delete-conversation"
 
@@ -82,7 +82,7 @@ export const ConversationHistory = ({
       <div className="flex-1 overflow-y-auto space-y-2 pr-1">
         {conversations.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
-            <Sparkles className="h-6 w-6 text-primary/40 mb-2" />
+            <MessagesSquare className="h-6 w-6 text-primary/40 mb-2" />
             <p className="text-xs font-semibold">No past sessions found</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               Start a conversation to store context
@@ -91,11 +91,7 @@ export const ConversationHistory = ({
         ) : (
           conversations.map((item) => {
             const isActive = activeSessionId === item.sessionId
-            const firstUserMessage =
-              item.messages.find(
-                (m: { role: string; content: string }) => m.role === "user"
-              )?.content || "Untitled Session"
-            const messageCount = item.messages.length
+            const messageCount = item.messageCount
 
             return (
               <div
@@ -120,7 +116,7 @@ export const ConversationHistory = ({
 
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-foreground truncate leading-snug">
-                      {firstUserMessage}
+                      {item.title}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[10px] text-muted-foreground font-mono">

@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef } from "react"
-import { Play, Pause, Clock, Sparkles, Loader2, Volume2 } from "lucide-react"
+import { Play, Pause, Clock, AudioLines, Loader2, Volume2 } from "lucide-react"
 import { useGetMusicHistory } from "../api/use-get-music-history"
 
 export const MusicHistory = () => {
@@ -74,7 +74,7 @@ export const MusicHistory = () => {
       <div className="space-y-3">
         {tracks.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center py-8 text-muted-foreground">
-            <Sparkles className="h-6 w-6 text-primary/40 mb-2" />
+            <AudioLines className="h-6 w-6 text-primary/40 mb-2" />
             <p className="text-xs font-semibold">No music tracks generated yet</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               Use the composer above to synthesize a track.

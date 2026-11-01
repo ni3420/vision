@@ -7,6 +7,7 @@ import {
   resolveMode,
   warnMock,
 } from "./runtime";
+import { isRetryableStatus, retryWithBackoff } from "./retry";
 import type { ChatGenerationResult, ChatMessage } from "./types";
 
 const SYSTEM_PROMPT =
@@ -14,8 +15,46 @@ const SYSTEM_PROMPT =
 
 const MAX_HISTORY = 12;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const ATTEMPT_TIMEOUT_MS = 60_000;
+const RETRY_ATTEMPTS = 3;
+
+export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
+
+export function chatErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = error as { status?: unknown; response?: { status?: unknown } };
+  if (typeof candidate.status === "number") return candidate.status;
+  const responseStatus = candidate.response?.status;
+  return typeof responseStatus === "number" ? responseStatus : undefined;
+}
+
+export function isRetryableChatError(error: unknown): boolean {
+  const status = chatErrorStatus(error);
+  // No HTTP status means a network, timeout, or abort failure worth retrying.
+  return status === undefined ? true : isRetryableStatus(status);
+}
+
+async function callChatProvider<T>(
+  provider: string,
+  label: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await retryWithBackoff(operation, {
+      attempts: RETRY_ATTEMPTS,
+      isRetryable: isRetryableChatError,
+    });
+  } catch (error) {
+    if (error instanceof ProviderCallError) throw error;
+    const status = chatErrorStatus(error);
+    throw new ProviderCallError(
+      `${label} chat request failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      provider,
+      status === undefined ? true : isRetryableStatus(status)
+    );
+  }
+}
 
 function recentHistory(history: ChatMessage[]): ChatMessage[] {
   return history
@@ -31,10 +70,12 @@ async function groqReply(
   const client = new OpenAI({
     apiKey: process.env.GROQ_API_KEY as string,
     baseURL: GROQ_BASE_URL,
+    timeout: ATTEMPT_TIMEOUT_MS,
+    maxRetries: 0,
   });
 
-  try {
-    const completion = await client.chat.completions.create({
+  const completion = await callChatProvider("groq", "Groq", () =>
+    client.chat.completions.create({
       model,
       temperature: 0.7,
       max_tokens: 800,
@@ -46,21 +87,15 @@ async function groqReply(
         })),
         { role: "user", content: userMessage },
       ],
-    });
+    })
+  );
 
-    const text = completion.choices[0]?.message?.content?.trim();
-    if (!text) {
-      throw new ProviderCallError("Groq returned an empty completion", "groq");
-    }
-
-    return { text, provider: "groq", model, mock: false };
-  } catch (error) {
-    if (error instanceof ProviderCallError) throw error;
-    throw new ProviderCallError(
-      `Groq chat request failed: ${error instanceof Error ? error.message : "unknown error"}`,
-      "groq"
-    );
+  const text = completion.choices[0]?.message?.content?.trim();
+  if (!text) {
+    throw new ProviderCallError("Groq returned an empty completion", "groq", true);
   }
+
+  return { text, provider: "groq", model, mock: false };
 }
 
 async function geminiReply(
@@ -68,10 +103,16 @@ async function geminiReply(
   userMessage: string
 ): Promise<ChatGenerationResult> {
   const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY as string,
+    httpOptions: {
+      timeout: ATTEMPT_TIMEOUT_MS,
+      retryOptions: { attempts: 1 },
+    },
+  });
 
-  try {
-    const result = await ai.models.generateContent({
+  const result = await callChatProvider("gemini", "Gemini", () =>
+    ai.models.generateContent({
       model,
       contents: [
         ...history.map((message) => ({
@@ -85,21 +126,15 @@ async function geminiReply(
         maxOutputTokens: 800,
         temperature: 0.7,
       },
-    });
+    })
+  );
 
-    const text = result.text?.trim();
-    if (!text) {
-      throw new ProviderCallError("Gemini returned an empty completion", "gemini");
-    }
-
-    return { text, provider: "gemini", model, mock: false };
-  } catch (error) {
-    if (error instanceof ProviderCallError) throw error;
-    throw new ProviderCallError(
-      `Gemini chat request failed: ${error instanceof Error ? error.message : "unknown error"}`,
-      "gemini"
-    );
+  const text = result.text?.trim();
+  if (!text) {
+    throw new ProviderCallError("Gemini returned an empty completion", "gemini", true);
   }
+
+  return { text, provider: "gemini", model, mock: false };
 }
 
 function mockReply(
@@ -120,14 +155,27 @@ export async function generateChatReply(
   const groqReady = looksConfigured(process.env.GROQ_API_KEY);
   const geminiReady = looksConfigured(process.env.GEMINI_API_KEY);
 
-  const mode = resolveMode(
-    groqReady || geminiReady
-      ? [process.env.GROQ_API_KEY ?? process.env.GEMINI_API_KEY]
-      : [undefined]
-  );
+  const mode = resolveMode([
+    groqReady ? process.env.GROQ_API_KEY : process.env.GEMINI_API_KEY,
+  ]);
 
   if (mode === "mock") return mockReply(cleanHistory, userMessage);
-  if (groqReady) return groqReply(cleanHistory, userMessage);
+
+  if (groqReady) {
+    try {
+      return await groqReply(cleanHistory, userMessage);
+    } catch (error) {
+      const canFallback =
+        geminiReady &&
+        error instanceof ProviderCallError &&
+        error.retryable;
+      if (!canFallback) throw error;
+      console.warn(
+        `[ai:chat] groq failed (${error.message}); falling back to gemini`
+      );
+    }
+  }
+
   if (geminiReady) return geminiReply(cleanHistory, userMessage);
 
   throw new ProviderNotConfiguredError(

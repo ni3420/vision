@@ -15,7 +15,10 @@ import {
   runWithQuota,
 } from "@/server/quota";
 import { quotaErrorResponse, quotaGuard } from "@/middleware/quota-middleware";
-import { rateLimitGuard } from "@/middleware/rate-limit-middleware";
+import {
+  checkRateLimit,
+  rateLimitGuard,
+} from "@/middleware/rate-limit-middleware";
 import type { Context } from "hono";
 import type { ChatMessage } from "@/server/ai/types";
 
@@ -39,7 +42,15 @@ function conversationErrorResponse(
   }
 
   if (error instanceof ProviderCallError) {
-    return c.json({ success: false, code: error.code, error: error.message }, 502);
+    return c.json(
+      {
+        success: false,
+        code: error.code,
+        error: error.message,
+        retryable: error.retryable,
+      },
+      502
+    );
   }
 
   console.error(`${fallbackMessage}:`, error);
@@ -70,10 +81,28 @@ const app = new Hono()
       }
 
       const conversations = await Conversation.find({ userId: auth.userId })
-        .select("sessionId messages createdAt updatedAt")
+        .select("sessionId messages updatedAt")
         .sort({ updatedAt: -1 });
 
-      return c.json({ success: true, data: conversations }, 200);
+      const data = conversations.map((conversation) => {
+        const messages = conversation.messages ?? [];
+        const firstUser = messages.find(
+          (message: { role: string; content: string }) => message.role === "user"
+        );
+        const last = messages[messages.length - 1] as
+          | { content?: string }
+          | undefined;
+
+        return {
+          sessionId: conversation.sessionId,
+          title: firstUser?.content.trim().slice(0, 120) || "New conversation",
+          messageCount: messages.length,
+          preview: (last?.content ?? "").trim().slice(0, 140),
+          updatedAt: conversation.updatedAt,
+        };
+      });
+
+      return c.json({ success: true, data }, 200);
     } catch (error) {
       console.error("Error fetching conversations:", error);
       return c.json(
@@ -146,6 +175,9 @@ const app = new Hono()
         let mock = false;
 
         if (initialMessage) {
+          const limit = await checkRateLimit(c, "conversation");
+          if (!limit.allowed) return c.json(limit.body, limit.status);
+
           const { value } = await runWithQuota(
             {
               userId: auth.userId,
@@ -217,8 +249,19 @@ const app = new Hono()
           userId: auth.userId,
         });
 
+        if (!existingSession) {
+          return c.json(
+            {
+              success: false,
+              code: "SESSION_NOT_FOUND",
+              error: "Conversation session not found",
+            },
+            404
+          );
+        }
+
         const reply = await generateChatReply(
-          toChatHistory(existingSession?.messages ?? []),
+          toChatHistory(existingSession.messages ?? []),
           message.content
         );
 
@@ -238,7 +281,7 @@ const app = new Hono()
               },
             },
           },
-          { new: true, upsert: true }
+          { new: true }
         );
 
         return c.json(

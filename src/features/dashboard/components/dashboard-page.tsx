@@ -8,11 +8,11 @@ import {
   ArrowUpRight,
   Crown,
   Image as ImageIcon,
-  MessageSquare,
-  Music,
+  Info,
+  MessagesSquare,
+  AudioLines,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
   Zap,
 } from "lucide-react"
 
@@ -39,8 +39,8 @@ const DistributionChart = dynamic(
 
 const QUICK_ACTIONS = [
   { label: "New image", href: "/image-generator", icon: ImageIcon },
-  { label: "Start chat", href: "/conversation", icon: MessageSquare },
-  { label: "Make music", href: "/music-generator", icon: Music },
+  { label: "Start chat", href: "/conversation", icon: MessagesSquare },
+  { label: "Make music", href: "/music-generator", icon: AudioLines },
 ]
 
 const STAT_TONES = {
@@ -224,14 +224,14 @@ export const DashBoardPage = () => {
                 label="Conversations"
                 value={snapshot.counts.conversations}
                 badge="All time"
-                icon={MessageSquare}
+                icon={MessagesSquare}
                 tone="indigo"
               />
               <StatCard
                 label="Music tracks"
                 value={snapshot.counts.music}
                 badge="All time"
-                icon={Music}
+                icon={AudioLines}
                 tone="purple"
               />
               <div className="bg-card border border-border/60 rounded-3xl p-5 shadow-sm">
@@ -255,7 +255,7 @@ export const DashBoardPage = () => {
                   </p>
                   <h3 className="text-2xl font-black text-foreground mt-0.5">
                     {snapshot.user.remaining === null
-                      ? "Unlimited"
+                      ? "No cap"
                       : `${snapshot.user.remaining} / ${snapshot.user.limit}`}
                   </h3>
                 </div>
@@ -328,7 +328,7 @@ export const DashBoardPage = () => {
 
         {!isPending && !isError && !snapshot && (
           <div className="bg-card border border-border/60 rounded-3xl p-6 flex items-center gap-2 text-xs text-muted-foreground">
-            <Sparkles className="h-4 w-4 text-primary" />
+            <Info className="h-4 w-4 text-primary" />
             <span>No summary available yet.</span>
           </div>
         )}

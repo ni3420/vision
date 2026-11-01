@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Bot, ArrowLeft, Sparkles, AlertCircle } from "lucide-react"
+import { Bot, ArrowLeft, Radar, AlertCircle } from "lucide-react"
 
 export default function NotFound() {
   return (
@@ -23,7 +23,7 @@ export default function NotFound() {
         {/* Status Badge & Titles */}
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/80 border border-border text-[11px] font-mono font-medium text-muted-foreground uppercase tracking-wider">
-            <Sparkles className="h-3 w-3 text-primary" />
+            <Radar className="h-3 w-3 text-primary" />
             Error 404 • Signal Lost
           </div>
 

@@ -4,7 +4,7 @@ import React, { useState } from "react"
 import CreateConversation from "@/features/conversation/components/create-conversation"
 import ShowConversation from "@/features/conversation/components/show-conversation"
 import ConversationHistory from "@/features/conversation/components/conversation-history"
-import { Sparkles, MessageSquarePlus } from "lucide-react"
+import { MessagesSquare, MessageSquarePlus } from "lucide-react"
 
 const ConversationPage = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -69,7 +69,7 @@ const ConversationPage = () => {
 
                 <div className="w-full max-w-2xl mx-auto bg-card/40 border border-border/40 rounded-3xl p-6 text-center space-y-2">
                   <div className="h-10 w-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-3">
-                    <Sparkles className="h-5 w-5" />
+                    <MessagesSquare className="h-5 w-5" />
                   </div>
                   <h3 className="text-sm font-bold text-foreground">
                     No Session Selected

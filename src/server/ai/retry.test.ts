@@ -4,6 +4,7 @@ import {
   fetchWithRetry,
   isRetryableStatus,
   parseRetryAfter,
+  retryWithBackoff,
 } from "./retry";
 
 const init: RequestInit = { method: "GET" };
@@ -47,6 +48,88 @@ describe("backoffDelay", () => {
     expect(backoffDelay(1, 250, 2000)).toBeGreaterThanOrEqual(250);
     expect(backoffDelay(1, 250, 2000)).toBeLessThan(500);
     expect(backoffDelay(10, 250, 2000)).toBe(2000);
+  });
+});
+
+describe("retryWithBackoff", () => {
+  it("returns the first success without sleeping", async () => {
+    const sleeps: number[] = [];
+    let calls = 0;
+
+    const value = await retryWithBackoff(
+      async () => {
+        calls += 1;
+        return "ok";
+      },
+      {
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      }
+    );
+
+    expect(value).toBe("ok");
+    expect(calls).toBe(1);
+    expect(sleeps).toHaveLength(0);
+  });
+
+  it("retries a transient error and then succeeds", async () => {
+    let calls = 0;
+    const sleeps: number[] = [];
+
+    const value = await retryWithBackoff(
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("timeout");
+        return "ok";
+      },
+      {
+        isRetryable: () => true,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      }
+    );
+
+    expect(value).toBe("ok");
+    expect(calls).toBe(2);
+    expect(sleeps).toHaveLength(1);
+  });
+
+  it("stops immediately on a non-retryable error", async () => {
+    let calls = 0;
+
+    await expect(
+      retryWithBackoff(
+        async () => {
+          calls += 1;
+          throw Object.assign(new Error("bad key"), { status: 401 });
+        },
+        {
+          isRetryable: (error) =>
+            (error as { status?: number }).status !== 401,
+          sleep: async () => undefined,
+        }
+      )
+    ).rejects.toThrow("bad key");
+
+    expect(calls).toBe(1);
+  });
+
+  it("gives up after the attempt budget", async () => {
+    let calls = 0;
+
+    await expect(
+      retryWithBackoff(
+        async () => {
+          calls += 1;
+          throw new Error("still down");
+        },
+        { attempts: 3, sleep: async () => undefined }
+      )
+    ).rejects.toThrow("still down");
+
+    expect(calls).toBe(3);
   });
 });
 

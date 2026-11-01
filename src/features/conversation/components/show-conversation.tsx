@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useEffect, useMemo } from "react"
-import { Send, Bot, User, Loader2, Sparkles, MessageSquare } from "lucide-react"
+import { Send, Bot, User, Loader2, MessageSquare, MessageSquareDashed } from "lucide-react"
 import { useGetConversation } from "../api/use-get-conversation"
 import { usePostMessage } from "../api/use-post-message"
 
@@ -105,7 +105,7 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
         </div>
 
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
-          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          <Bot className="h-3.5 w-3.5 text-primary" />
           <span>AI assistant</span>
         </div>
       </div>
@@ -114,7 +114,7 @@ export const ShowConversation = ({ sessionId }: ShowConversationProps) => {
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground py-12">
-            <Sparkles className="h-8 w-8 text-primary/40 mb-2 animate-bounce" />
+            <MessageSquareDashed className="h-8 w-8 text-primary/40 mb-2" />
             <p className="text-xs font-semibold">No messages in this session yet.</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
               Send a prompt below to begin the conversation.

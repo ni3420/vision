@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { AlertCircle, Download, RefreshCw, Sparkles } from "lucide-react"
+import { AlertCircle, Download, ImagePlus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -126,7 +126,7 @@ const ImageViews = ({
         <ResultsHeader label="Results" />
         <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-secondary/20 p-8 text-center">
           <span className="flex size-11 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground">
-            <Sparkles className="size-5" />
+            <ImagePlus className="size-5" />
           </span>
           <h3 className="mt-3 text-sm font-semibold text-foreground">
             Your images appear here

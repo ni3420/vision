@@ -36,7 +36,7 @@ const Page = () => {
 
         {user ? (
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-semibold text-primary">
-            {isPro ? "Pro · unlimited" : `${remaining} of ${FREE_GENERATION_LIMIT} free left`}
+            {isPro ? "Pro · no free-tier cap" : `${remaining} of ${FREE_GENERATION_LIMIT} free left`}
           </span>
         ) : null}
       </header>

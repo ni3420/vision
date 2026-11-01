@@ -19,7 +19,7 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Dashboard | Generation entry points, credit usage, plan, and recent activity |
 | Image generation | Cloudflare Workers AI FLUX.1 schnell, 1–2 images per request, private storage; prompt examples, ratio tiles, cost label, retryable error states |
 | Theming | Light, dark, and system toggle in the navbar (`next-themes`, token-driven) |
-| Conversation | Groq `llama-3.3-70b-versatile` with Gemini `gemini-2.5-flash` fallback |
+| Conversation | Groq `openai/gpt-oss-120b` with Gemini `gemini-3.6-flash` fallback, 60 s timeout and 3 bounded retries; request/response (no streaming) |
 | Music generation | Treblo v3, stored as a playable audio asset |
 | Video generation | Not available — no provider is configured or integrated |
 | Free plan quota | 5 generations per account, enforced server-side |
@@ -37,8 +37,8 @@ flowchart TD
     DB[("MongoDB<br/>users, assets, conversations, music, ledger")]
     Store[("Storage<br/>local .data/uploads or S3/R2")]
     CF["Cloudflare Workers AI<br/>FLUX.1 schnell"]
-    Groq["Groq<br/>llama-3.3-70b-versatile"]
-    Gemini["Gemini<br/>gemini-2.5-flash"]
+    Groq["Groq<br/>chat completions"]
+    Gemini["Gemini<br/>fallback"]
     Treblo["Treblo v3"]
     Stripe["Stripe<br/>Checkout + webhook"]
 
@@ -147,7 +147,7 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `GET` | `/api/music/history` | 50 newest tracks with fresh URLs |
 | `POST` | `/api/conversation/session` | Create a conversation (optionally with a first message) |
 | `POST` | `/api/conversation/message` | Append a message and get the reply |
-| `GET` | `/api/conversation/all` | All conversations for the current user |
+| `GET` | `/api/conversation/all` | Session summaries (title, message count, preview) for the current user |
 | `GET` | `/api/conversation/:sessionId` | One conversation |
 | `DELETE` | `/api/conversation/:sessionId` | Delete a conversation |
 | `GET` | `/api/dashboard/summary` | Counts, 7-day activity series, plan and remaining free uses |
@@ -182,7 +182,8 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 - **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image schemas, generation error copy, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
 - **UI verification** for the image-generator redesign is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
 - **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
-- **Rate limiting** covers the three charged routes only; auth, session creation, checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable.
+- **Live chat** targets `openai/gpt-oss-120b` and `gemini-3.6-flash`, but those IDs are documentation-verified rather than exercised here: the local key is a placeholder, so no provider call was made. Chat is still request/response — no streaming, stop button, or token usage.
+- **Rate limiting** covers the three charged routes only; auth, session creation (including one with an initial message), checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable.
 - **Quota** is a lifetime free allowance of 5 units; it does not reset monthly. PRO has no usage cap in code.
 - The free-quota path has not been exercised against a live MongoDB here; unit tests mock the models and the HTTP flow is statically verified only.
 - History endpoints return the newest 60 images / 50 tracks; cursor pagination is not implemented.

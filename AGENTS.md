@@ -52,7 +52,7 @@ Read this file before changing code. Then:
 | Payments | Stripe `22.3` Checkout + webhook | `src/features/Subscription/server/route.ts` |
 | Storage | Local filesystem, S3-compatible (`@aws-sdk/client-s3` v3), or ImageKit | `STORAGE_DRIVER=local \| s3 \| imagekit` |
 | Image AI | Cloudflare Workers AI `@cf/black-forest-labs/flux-1-schnell` | `src/server/ai/image.ts` |
-| Chat AI | Groq `llama-3.3-70b-versatile`, Gemini `gemini-2.5-flash` fallback | `src/server/ai/chat.ts` |
+| Chat AI | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | 60 s per attempt, 3 bounded attempts; see §7.2.1 |
 | Music AI | Treblo v3 (`https://api.treblo.com/v1/generations`) | `src/server/ai/music.ts` |
 | Video | **Not implemented** | Honest "Not available yet" page |
 | Tests | `bun test` (Bun built-in runner) + `bun run smoke` | No Vitest/Jest; do not add one without a reason |
@@ -61,13 +61,13 @@ Read this file before changing code. Then:
 
 ### 1.2 Gate baseline
 
-| Gate | Command | Baseline 2026-11-01 |
+| Gate | Command | Baseline 2026-11-02 |
 |---|---|---|
 | Types | `bun run typecheck` | **PASS** |
 | Lint | `bun run lint` | **PASS — 0 problems** |
-| Unit tests | `bun run test` | **PASS — 76 tests / 9 files** |
+| Unit tests | `bun run test` | **PASS — 87 tests / 10 files** |
 | Adapters | `bun run smoke` | **PASS** (forces mock mode) |
-| Build | `bun run build` | **PASS** — compiled in 19s, 9 routes (2026-11-01) |
+| Build | `bun run build` | **PASS** — compiled in 33.8s, 9 routes (2026-11-02) |
 
 One non-blocking Turbopack warning remains for the runtime-computed local storage root
 (`src/server/storage.ts`); it is intentional, not an error.
@@ -88,7 +88,13 @@ sign-in and no session or database is available in this environment.
   cost an extra write per request.
 - No Stripe event-idempotency table; replayed webhooks re-apply the same plan write.
 - History endpoints use a capped `limit` (60 images / 50 tracks), not cursor pagination.
-- Chat is request/response; no streaming, stop button, or token usage.
+- Chat is request/response; no streaming, stop button, or token usage (C-3).
+- Chat retries and timeouts are bounded (2026-11-02); the adapter still runs inside one
+  HTTP request, so a slow reply holds the connection.
+- `GET /api/conversation/all` returns a session summary, not full messages; it is not
+  paginated yet.
+- Chat model IDs are documentation-verified, not live-tested here (the local key is a
+  placeholder), so a real deployment must confirm access.
 - No async job queue: one HTTP request holds the provider call.
 - `Asset.kind` allows `"music"`, but music tracks live in the `Music` collection.
 - `README.md` and this file are the only project documentation; there is no `docs/`.
@@ -106,7 +112,8 @@ state.
 |---|---|---|---|
 | `/` | Dashboard | Counts, 7-day activity, workload split, plan meter, quick actions | loading skeleton, empty, error + retry |
 | `/image-generator` | Image Studio | Prompt textarea with counter and examples, ratio tiles, 1–2 variations, cost label, result grid, history tab | idle (skeletons, error + retry, empty), success, mock badge, quota (403 + upgrade modal) |
-| `/conversation` | Chat | Session list, message thread, composer, delete session | empty, pending reply, error, no session |
+| `/conversation` | Chat | Session list (title, message count), message thread, composer, delete session | no session, empty thread, pending reply, provider error + retry, mock reply |
+| `/conversation` (C-2 target) | Chat | Rendered markdown, optimistic messages, textarea composer, suggested prompts, delete confirm, deep link | sending, send error with draft restored, mock badge |
 | `/music-generator` | Music Studio | Prompt, 8/15/20 s duration, track player, history | idle, synthesizing, success, quota, provider error |
 | `/video-generator` | Video | Honest "not available yet" explanation with links to working tools | static |
 | `/auth/sign-in`, `/auth/sign-up` | Auth | Clerk-hosted components | Clerk-managed |
@@ -356,11 +363,46 @@ Rules:
 | Capability | Provider / model | Inputs actually supported |
 |---|---|---|
 | Image | Cloudflare FLUX.1 schnell | prompt, width, height (64–1536 each); 1–2 outputs per request |
-| Chat | Groq `llama-3.3-70b-versatile`, Gemini `gemini-2.5-flash` fallback | last 12 messages + new message |
+| Chat | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | last 12 messages + new message, 4000 chars each |
 | Music | Treblo v3 | prompt, 5–60 s duration (UI offers 8/15/20) |
 | Video | none | do not add controls |
 
 Verify live provider docs before changing model IDs, params, prices, or limits.
+
+#### 7.2.1 Chat provider fix (implemented 2026-11-02, docs-verified)
+
+Both previous defaults were retired: Groq shut down `llama-3.3-70b-versatile` on
+**2026-08-16**, and Gemini restricts `gemini-2.5-flash` to projects that already used it.
+C-1 replaced them and hardened the adapter.
+
+| Provider | Default now | Why | Override |
+|---|---|---|---|
+| Groq | `openai/gpt-oss-120b` | Replacement offered on Groq's deprecations page (`qwen/qwen3.6-27b` also works) | `GROQ_MODEL` |
+| Gemini | `gemini-3.6-flash` | Current stable Flash; `gemini-3.5-flash` shut down 2026-10-08 and `gemini-3.7-flash` was retired | `GEMINI_MODEL` |
+
+Sources: `console.groq.com/docs/deprecations`,
+`console.groq.com/docs/model/openai/gpt-oss-120b`, `ai.google.dev/gemini-api/docs/models`,
+`ai.google.dev/gemini-api/docs/deprecations`.
+
+What the adapter does now:
+
+- Uses the OpenAI-compatible `/openai/v1/chat/completions` contract for Groq; no
+  llama-specific parameters.
+- `openai` client: `timeout: 60_000`, `maxRetries: 0`; `@google/genai` client:
+  `httpOptions.timeout: 60_000`, `retryOptions.attempts: 1`. Our own
+  `retryWithBackoff` adds 3 attempts, so SDK retries never stack.
+- Classifies by HTTP status: 408/429/5xx retry; 400/401/403/404 do not. A status-less
+  failure (network, timeout, abort) is retryable.
+- Falls back to Gemini **only** when Groq fails retryably (or is unconfigured). A
+  permanent Groq error surfaces instead of silently switching providers.
+- `ProviderCallError.retryable` is returned in the conversation 502 body.
+- `POST /api/conversation/session` is rate limited when `initialMessage` is present;
+  `/api/conversation/message` requires an existing owned session (404, no upsert).
+- `GET /api/conversation/all` returns `{ sessionId, title, messageCount, preview, updatedAt }`
+  instead of every message.
+
+Model IDs are documentation-verified, not live-tested in this environment: the local Gemini
+key is a placeholder and no Groq key is set, so spending credits was out of scope.
 
 ### 7.3 Retry policy (`src/server/ai/retry.ts`)
 
@@ -368,7 +410,10 @@ Verify live provider docs before changing model IDs, params, prices, or limits.
   is permanent — retrying it wastes quota and time.
 - Default 3 attempts, exponential backoff with jitter (250 ms → 1 s), capped by
   `Retry-After` when the provider sends one.
-- Each attempt gets its own `AbortSignal.timeout`; a timeout is a retryable network error.
+- Each fetch attempt gets its own `AbortSignal.timeout`; SDK-based adapters use a
+  per-request client timeout instead. A timeout is a retryable network error.
+- `retryWithBackoff()` is the generic wrapper for SDK calls; `fetchWithRetry()` handles raw
+  `fetch`. Both share the same backoff, jitter, and attempt budget.
 - Every adapter already normalizes failures to `ProviderCallError` (502) or
   `ProviderNotConfiguredError` (503). Retry inside the adapter, never in the route.
 - `ProviderCallError.retryable` is surfaced in the error body so the UI knows whether to
@@ -407,6 +452,9 @@ copy, logos, or exact layouts.
   `src/features/<feature>/components`.
 - Prefer composing Base UI primitives over adding a component library.
 - Keep `lucide-react` as the only icon set.
+- Icon language (2026-11-02): `MessagesSquare` for chat, `AudioLines` for music,
+  `Clapperboard` for video, `ImagePlus`/`Image` for images, `ArrowUpRight` for primary
+  actions. `Sparkles` is retired — do not reintroduce it as decoration.
 - Extract a component when two features need it, not preemptively.
 
 ### 8.4 Layout patterns
@@ -605,7 +653,14 @@ rewrite the backend to make it look different.
 - [ ] Replace remaining hard-coded values (quota limit in `Plan`) with server data.
 - [x] Add a real image error state (503/502) beside the upgrade modal, with retry when the
       server marks the failure `retryable` (2026-11-01).
-- [ ] Make chat composer a textarea with Enter/Shift+Enter hint.
+- [x] **C-1** Fix chat providers (2026-11-02): current model defaults, 60 s timeout,
+      3 bounded attempts, `retryable` in 502, rate-limit session-with-initial-message,
+      session-required `/message`, slim `/all`, tests.
+- [ ] **C-2** Rebuild the conversation surface (accessible session list, optimistic
+      messages, rendered markdown, inline send error + retry, mock badge, textarea composer,
+      suggested prompts, jump-to-latest, deep-linkable `?session=`).
+- [ ] **C-3 (deferred)** Stream assistant replies with a stop button and a mock-free
+      production path; requires the route to change from JSON to SSE.
 - [x] Show the active provider/mock badge on the image studio when `mock: true` (2026-11-01);
       chat and music still need it.
 - [x] Light/dark/system theme toggle in the navbar (2026-11-01).
@@ -656,7 +711,8 @@ If a step is unavailable in the demo environment, say why instead of staging a f
 | Component base | shadcn `base-nova` on Base UI | A component cannot meet a11y/design needs |
 | Storage | Local, S3-compatible (AWS/R2/B2), or ImageKit via one adapter | A CDN requirement the adapter cannot meet |
 | Image provider | Cloudflare FLUX.1 schnell | Quality, cost, or latency no longer fit |
-| Chat provider | Groq first, Gemini fallback | Rate limits or quality change |
+| Chat provider | Groq `openai/gpt-oss-120b` first, Gemini `gemini-3.6-flash` fallback (C-1) | Rate limits, price, or quality change |
+| Chat transport | Request/response JSON until C-3; no fake stop button | Streaming is worth the SSE + abort work |
 | Music provider | Treblo v3 | Contract, quality, or cost changes |
 | Video | Disabled, honest page | A verified provider + jobs + billing exist |
 | Free quota | 5 shared successful requests | Product owner changes pricing |

@@ -18,7 +18,7 @@ export function quotaErrorResponse(c: Context, error: unknown) {
         success: false,
         code: "QUOTA_EXCEEDED",
         error:
-          "Free generation limit reached. Upgrade to Pro for unlimited generations.",
+          "Free generation limit reached. Upgrade to Pro to remove the free-tier cap.",
       },
       403
     );

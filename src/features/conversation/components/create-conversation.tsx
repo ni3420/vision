@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
-import { Send, Sparkles, Loader2 } from "lucide-react"
+import { Send, MessageSquarePlus, Loader2 } from "lucide-react"
 import { useCreateSession } from "../api/use-create-conversation"
 
 export const CreateConversation = () => {
@@ -38,7 +38,7 @@ export const CreateConversation = () => {
 
       <div className="flex items-center gap-2 mb-4">
         <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-          <Sparkles className="h-4 w-4" />
+          <MessageSquarePlus className="h-4 w-4" />
         </div>
         <div>
           <h2 className="text-sm font-bold text-foreground">

@@ -63,7 +63,7 @@ export const UpgradeModal = ({ isOpen, onClose }: UpgradeModalProps) => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
           <div className="p-3 rounded-2xl bg-secondary/40 border border-border/60 flex items-center gap-2.5">
             <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-            <span className="text-xs font-semibold text-foreground">Unlimited Generations</span>
+            <span className="text-xs font-semibold text-foreground">No free-tier cap</span>
           </div>
           <div className="p-3 rounded-2xl bg-secondary/40 border border-border/60 flex items-center gap-2.5">
             <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />

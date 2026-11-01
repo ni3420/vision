@@ -3,7 +3,7 @@
 import React from "react"
 import CreateMusic from "@/features/music/components/create-music"
 import MusicHistory from "@/features/music/components/music-history"
-import { Music2, Sparkles } from "lucide-react"
+import { AudioLines, Music2 } from "lucide-react"
 
 const MusicPage = () => {
   return (
@@ -27,7 +27,7 @@ const MusicPage = () => {
           </div>
 
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/80 text-[11px] text-muted-foreground font-medium">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <AudioLines className="h-3.5 w-3.5 text-primary" />
             <span>MusicGen Engine</span>
           </div>
         </div>

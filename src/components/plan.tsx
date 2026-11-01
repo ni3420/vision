@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Sparkles, Zap, ShieldCheck, Crown, Loader2 } from "lucide-react"
+import { Gauge, Zap, ShieldCheck, Crown, Loader2 } from "lucide-react"
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
 import { useCreateCheckout } from "@/features/Subscription/api/use-create-subscription"
 
@@ -92,7 +92,7 @@ export const Plan = ({ onUpgradeClick, user: providedUser }: PlanProps) => {
     <div className="w-full bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+          <Gauge className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
           <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
             Free Plan
           </span>

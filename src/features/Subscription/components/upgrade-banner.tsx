@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Sparkles, ArrowRight, Zap } from "lucide-react"
+import { Crown, ArrowRight, Zap } from "lucide-react"
 import { useCreateCheckout } from "@/features/Subscription/api/use-create-subscription"
 
 interface UpgradeBannerProps {
@@ -13,7 +13,7 @@ interface UpgradeBannerProps {
 }
 
 export const UpgradeBanner = ({
-  title = "Unlock Unlimited AI Generations",
+  title = "Remove the free-tier cap",
   description = "Upgrade to Vision Pro for priority access, zero latency, and unrestricted execution frames across all modalities.",
   buttonText = "Upgrade Now",
   onUpgradeClick,
@@ -39,7 +39,7 @@ export const UpgradeBanner = ({
       <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
         <div className="space-y-2 max-w-xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-semibold backdrop-blur-md">
-            <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+            <Crown className="h-3.5 w-3.5 text-amber-300" />
             <span>Vision Pro Engine</span>
           </div>
 
