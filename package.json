@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "smoke": "bun scripts/smoke-adapters.ts"
+    "smoke": "bun scripts/smoke-adapters.ts",
+    "worker:dev": "cd worker && bunx wrangler dev",
+    "worker:deploy": "cd worker && bunx wrangler deploy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

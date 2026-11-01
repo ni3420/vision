@@ -1,0 +1,13 @@
+name = "vision-image-worker"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[ai]
+binding = "Image-AI"
+
+[observability]
+enabled = true
+
+# IMAGE_API_TOKEN is a secret, not a var:
+#   cd worker && bunx wrangler secret put IMAGE_API_TOKEN
+# Locally, put it in worker/.dev.vars (see .dev.vars.example).

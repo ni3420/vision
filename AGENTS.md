@@ -65,9 +65,9 @@ Read this file before changing code. Then:
 |---|---|---|
 | Types | `bun run typecheck` | **PASS** |
 | Lint | `bun run lint` | **PASS — 0 problems** |
-| Unit tests | `bun run test` | **PASS — 87 tests / 10 files** |
+| Unit tests | `bun run test` | **PASS — 106 tests / 12 files** |
 | Adapters | `bun run smoke` | **PASS** (forces mock mode) |
-| Build | `bun run build` | **PASS** — compiled in 33.8s, 9 routes (2026-11-02) |
+| Build | `bun run build` | **PASS** — compiled in 26.7s, 9 routes (2026-11-02) |
 
 One non-blocking Turbopack warning remains for the runtime-computed local storage root
 (`src/server/storage.ts`); it is intentional, not an error.
@@ -95,6 +95,9 @@ sign-in and no session or database is available in this environment.
   paginated yet.
 - Chat model IDs are documentation-verified, not live-tested here (the local key is a
   placeholder), so a real deployment must confirm access.
+- Image generation targets FLUX.2 klein via multipart. The adapter is covered by tests with
+  a stubbed fetch and the Worker by tests with a fake binding; neither has made a real model
+  call, and the Worker has never been deployed.
 - No async job queue: one HTTP request holds the provider call.
 - `Asset.kind` allows `"music"`, but music tracks live in the `Music` collection.
 - `README.md` and this file are the only project documentation; there is no `docs/`.
@@ -362,7 +365,7 @@ Rules:
 
 | Capability | Provider / model | Inputs actually supported |
 |---|---|---|
-| Image | Cloudflare FLUX.1 schnell | prompt, width, height (64–1536 each); 1–2 outputs per request |
+| Image | Cloudflare FLUX.2 [klein] 4B | multipart `prompt` (≤2048 chars), optional `width`/`height` (64–1536, default 1024), `guidance` (0–20, default 3.5), `seed`; **fixed 4-step schedule, no `steps` param**; 1–2 outputs per request |
 | Chat | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | last 12 messages + new message, 4000 chars each |
 | Music | Treblo v3 | prompt, 5–60 s duration (UI offers 8/15/20) |
 | Video | none | do not add controls |
@@ -403,6 +406,41 @@ What the adapter does now:
 
 Model IDs are documentation-verified, not live-tested in this environment: the local Gemini
 key is a placeholder and no Groq key is set, so spending credits was out of scope.
+
+#### 7.2.2 Image provider: Worker or direct API (implemented 2026-11-02)
+
+`src/server/ai/image.ts` always sends **multipart/form-data** with `prompt`, `width`, and
+`height` (never a hand-written `Content-Type`, so fetch sets the boundary). Two endpoints:
+
+| Path | Env | Endpoint |
+|---|---|---|
+| Worker (preferred) | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` | your deployed Worker |
+| Direct | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | `api.cloudflare.com/client/v4/accounts/<id>/ai/run/@cf/black-forest-labs/flux-2-klein-4b` |
+
+`CLOUDFARE_URL` must be HTTPS, or `http://localhost` / `127.0.0.1` outside production.
+The adapter resizes or crops the returned image to the requested size with `sharp` and
+stores JPEG, so model output format is not user-visible.
+
+Worker (`worker/src/index.ts`, binding `Image-AI`) accepts JSON **and** multipart:
+
+- `POST /` or `POST /generate`; `GET /health`; `OPTIONS` for CORS. Anything else 404/405.
+- JSON `{ prompt, width?, height?, aspectRatio?, guidance?, seed? }` → raw image bytes
+  (`image/png` or sniffed `image/jpeg`/`image/webp`) with `X-Image-Size` and `X-Request-Id`.
+- `aspectRatio` accepts `1:1`, `16:9`, `9:16`, `4:3` when no explicit width/height is sent.
+- Multipart clients may also upload `image` (JPEG/PNG/WebP, ≤10 MB), forwarded as
+  `input_image_0` for image-to-image.
+- Bearer token compared in constant time. `IMAGE_API_TOKEN` is the canonical secret;
+  `WORKER_API_KEY` also works. With neither set the Worker returns **503**, never an open
+  proxy. The `AI` binding name also works if `Image-AI` is absent.
+- Upstream failure or empty output → `502`, which the adapter treats as retryable.
+
+Docs-verified: `developers.cloudflare.com/changelog/post/2026-01-15-flux-2-klein-4b-workers-ai/`
+(multipart, required `prompt`, optional `input_image_0–3`/`guidance`/`width`/`height`/`seed`,
+fixed 4 steps) and the model page's `schema-input.json`. Nothing was deployed and no live
+model call was made here.
+
+Local run: `bun run worker:dev` with `worker/.dev.vars` (`IMAGE_API_TOKEN=…`). Deploy:
+`bun run worker:deploy`, then `wrangler secret put IMAGE_API_TOKEN`. Never commit `.dev.vars`.
 
 ### 7.3 Retry policy (`src/server/ai/retry.ts`)
 

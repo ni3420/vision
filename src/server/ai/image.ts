@@ -9,17 +9,23 @@ import {
 import { fetchWithRetry, isRetryableStatus, type FetchLike } from "./retry";
 import type { ImageGenerationRequest, ImageGenerationResult } from "./types";
 
-const CF_MODEL = "@cf/black-forest-labs/flux-1-schnell";
-const CF_FALLBACK_MODEL = "flux-1-schnell";
+const CF_MODEL = "@cf/black-forest-labs/flux-2-klein-4b";
+const CF_FALLBACK_MODEL = "flux-2-klein-4b";
 const TIMEOUT_MS = 60_000;
 
 // A fresh AbortSignal per attempt, so a timed-out attempt cannot poison the retry.
 const fetchWithTimeout: FetchLike = (input, init) =>
   fetch(input, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
 
+function isAllowedEndpoint(value: string): boolean {
+  if (value.startsWith("https://")) return true;
+  if (process.env.NODE_ENV === "production") return false;
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(value);
+}
+
 function cloudflareEndpoint(): string {
   const explicit = process.env.CLOUDFARE_URL?.trim();
-  if (explicit?.startsWith("https://")) return explicit;
+  if (explicit && isAllowedEndpoint(explicit)) return explicit;
 
   const account =
     process.env.CLOUDFLARE_ACCOUNT_ID?.trim() ??
@@ -86,18 +92,20 @@ async function callCloudflare(
   const endpoint = cloudflareEndpoint();
   const token = cloudflareToken();
 
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("width", String(width));
+  form.append("height", String(height));
+
   let response: Response;
   try {
     response = await fetchWithRetry(endpoint, {
       method: "POST",
       headers: {
+        // fetch sets the multipart boundary; never set Content-Type by hand.
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        prompt: `${prompt}, high quality, detailed, aspect ratio ${width}:${height}`,
-        steps: 4,
-      }),
+      body: form,
     }, { fetchImpl: fetchWithTimeout });
   } catch (error) {
     throw new ProviderCallError(

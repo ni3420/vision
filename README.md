@@ -17,7 +17,7 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Surface | State today |
 | --- | --- |
 | Dashboard | Generation entry points, credit usage, plan, and recent activity |
-| Image generation | Cloudflare Workers AI FLUX.1 schnell, 1–2 images per request, private storage; prompt examples, ratio tiles, cost label, retryable error states |
+| Image generation | Cloudflare Workers AI FLUX.2 [klein] 4B through a Worker or the API directly, 1–2 images per request, private storage; prompt examples, ratio tiles, cost label, retryable error states |
 | Theming | Light, dark, and system toggle in the navbar (`next-themes`, token-driven) |
 | Conversation | Groq `openai/gpt-oss-120b` with Gemini `gemini-3.6-flash` fallback, 60 s timeout and 3 bounded retries; request/response (no streaming) |
 | Music generation | Treblo v3, stored as a playable audio asset |
@@ -36,7 +36,7 @@ flowchart TD
     API["Hono API<br/>/api/*"]
     DB[("MongoDB<br/>users, assets, conversations, music, ledger")]
     Store[("Storage<br/>local .data/uploads or S3/R2")]
-    CF["Cloudflare Workers AI<br/>FLUX.1 schnell"]
+    CF["Cloudflare Worker<br/>FLUX.2 klein 4B"]
     Groq["Groq<br/>chat completions"]
     Gemini["Gemini<br/>fallback"]
     Treblo["Treblo v3"]
@@ -87,7 +87,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | Auth | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Always |
 | App | `NEXT_PUBLIC_APP_URL` | Always (Stripe redirects) |
 | Runtime mode | `AI_MODE` (`auto` \| `live` \| `mock`) | Optional, defaults to `auto` |
-| Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY`, or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` | For live images |
+| Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` (your own Worker), or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (direct) | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
 | Music provider | `TREBLO_API_KEY` | For live music |
 | Storage | `STORAGE_DRIVER` (`local` \| `s3` \| `imagekit`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Local by default |
@@ -111,7 +111,23 @@ In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFI
 
 Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ownership is re-checked on every read. Generated images are stored with their URL in `assets.url`; presigned or signed URLs are never persisted.
 
-Image provider calls retry up to 3 times with exponential backoff on network errors and `408`/`429`/`5xx`; `Retry-After` is honoured. A failed request returns `retryable` in the error body so the UI can offer a retry.
+Image provider calls retry up to 3 times with exponential backoff on network errors and `408`/`429`/`5xx`; `Retry-After` is honoured. A failed request returns `retryable` in the error body so the UI can offer a retry. Requests are `multipart/form-data` with `prompt`, `width`, and `height`, because FLUX.2 klein takes multipart and a fixed 4-step schedule (no `steps` field).
+
+### Cloudflare Worker for images
+
+`worker/` runs FLUX.2 [klein] 4B through the `AI` binding (`Image-AI`). Deploy it once and keep the Cloudflare token out of the Next.js app:
+
+```bash
+cd worker
+bunx wrangler login                        # your account, your browser
+bunx wrangler secret put IMAGE_API_TOKEN   # the shared secret
+cd ..
+bun run worker:deploy                      # prints https://vision-image-worker.<subdomain>.workers.dev
+```
+
+Then set `CLOUDFARE_URL` to that URL and `CLOUDFARE_API_KEY` to the same secret. For local work: `cp worker/.dev.vars.example worker/.dev.vars`, fill it in, run `bun run worker:dev`, and use `CLOUDFARE_URL=http://localhost:8787`.
+
+The Worker accepts `POST /generate` with JSON `{ prompt, width?, height?, aspectRatio?, guidance?, seed? }` or a multipart form (optionally with an `image` field for image-to-image). It returns raw image bytes, exposes `GET /health`, and answers CORS preflight. It returns `503` until `IMAGE_API_TOKEN` is set, so a fresh deploy is never an open proxy. An already-deployed Worker with an `IMAGE_API_TOKEN` secret works unchanged — only the request format matters.
 
 ### Stripe
 
