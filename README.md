@@ -126,7 +126,7 @@ Object keys are opaque (`users/<userId>/<kind>/<yyyy>/<mm>/<uuid>.<ext>`) and ow
 | `bun run start` | Serve the production build |
 | `bun run typecheck` | `tsc --noEmit` |
 | `bun run lint` | ESLint |
-| `bun run test` | Unit tests (Bun runner): quota reserve/settle/refund, dashboard summary, image schemas, AI mode resolution |
+| `bun run test` | Unit tests (Bun runner): quota, rate limiting, dashboard summary, image schemas, AI mode resolution |
 | `bun run smoke` | Adapter smoke test; forces `AI_MODE=mock` and verifies JPEG bytes, resizing, chat text, WAV output, and a storage round-trip |
 
 ## API
@@ -151,7 +151,7 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `POST` | `/api/stripe` | Create a Checkout session |
 | `POST` | `/api/stripe/webhook` | Stripe events (public, signature-verified) |
 
-Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `PROVIDER_NOT_CONFIGURED` (503), and `PROVIDER_CALL_FAILED` (502).
+Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `RATE_LIMITED` (429), `PROVIDER_NOT_CONFIGURED` (503), and `PROVIDER_CALL_FAILED` (502).
 
 ### Request limits
 
@@ -159,6 +159,7 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 - Dimensions: 64–1536 px per side, `WIDTH*HEIGHT` format.
 - Quantity: 1–2 images per request.
 - Conversation messages: 4000 characters server-side; only the last 12 turns are sent to the model.
+- Rate limits per user, per route (fixed one-minute window): image 10, music 6, conversation message 30. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
 
 ## Data model
 
@@ -167,15 +168,16 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 | `users` | Clerk `userId`, email, name, plan, `freeUsesCount` |
 | `assets` | Image/music metadata: object key, MIME, bytes, dimensions, prompt, provider, model |
 | `usage_ledger` | Reservation records with a unique sparse idempotency key |
+| `rate_limits` | Per-user, per-route window counters; a TTL index expires them |
 | `conversations` | Session metadata and message history |
 | `music` | Track metadata, object key, provider, model, duration |
 
 ## Known limitations
 
 - **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
-- **Tests** cover quota semantics, pure dashboard logic, image schemas, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
+- **Tests** cover quota semantics, rate-limit windows, pure dashboard logic, image schemas, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
 - **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
-- **Rate limiting** does not exist yet on generation, upload, or auth routes.
+- **Rate limiting** covers the three charged routes only; auth, session creation, checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable.
 - **Quota** is a lifetime free allowance of 5 units; it does not reset monthly. PRO has no usage cap in code.
 - The free-quota path has not been exercised against a live MongoDB here; unit tests mock the models and the HTTP flow is statically verified only.
 - History endpoints return the newest 60 images / 50 tracks; cursor pagination is not implemented.
@@ -183,7 +185,7 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 ## Roadmap
 
 1. Per-route metadata, Open Graph tags, and an OG image.
-2. Rate limiting, webhook idempotency, and segment-level error boundaries.
+2. Webhook event idempotency, rate limits on auth/session/checkout, and segment-level error boundaries.
 3. Browser E2E tests and CI, then an end-to-end demo dry run.
 4. Image editing (background removal, inpainting) behind verified providers.
 5. Video only after image workflows and unit economics are validated.

@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { getAuth } from "@clerk/hono";
 import { Music, type IMusic } from "@/models/music.models";
 import { quotaGuard } from "@/middleware/quota-middleware";
+import { rateLimitGuard } from "@/middleware/rate-limit-middleware";
 import { generateMusic } from "@/server/ai/music";
 import {
   ProviderCallError,
@@ -70,6 +71,7 @@ const app = new Hono()
   .post(
     "/generate",
     zValidator("json", GenerateMusicSchema),
+    rateLimitGuard("music"),
     quotaGuard("music"),
     async (c) => {
       const auth = getAuth(c);

@@ -15,6 +15,7 @@ import {
   runWithQuota,
 } from "@/server/quota";
 import { quotaErrorResponse, quotaGuard } from "@/middleware/quota-middleware";
+import { rateLimitGuard } from "@/middleware/rate-limit-middleware";
 import type { Context } from "hono";
 import type { ChatMessage } from "@/server/ai/types";
 
@@ -197,6 +198,7 @@ const app = new Hono()
   .post(
     "/message",
     zValidator("json", PostMessageSchema),
+    rateLimitGuard("conversation"),
     quotaGuard("conversation"),
     async (c) => {
       try {

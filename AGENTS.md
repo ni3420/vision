@@ -64,7 +64,7 @@ Read this file before changing code. Then:
 |---|---|---|
 | Types | `bun run typecheck` | **PASS** |
 | Lint | `bun run lint` | **PASS — 0 problems** |
-| Unit tests | `bun run test` | **PASS — 33 tests / 5 files** |
+| Unit tests | `bun run test` | **PASS — 43 tests / 6 files** |
 | Adapters | `bun run smoke` | **PASS** (forces mock mode) |
 | Build | `bun run build` | **PASS** — compiled in 59s, 8 routes (2026-11-01) |
 
@@ -78,7 +78,9 @@ limitation explicitly instead of claiming a working UI flow.
 
 ### 1.3 Known limitations (do not paper over)
 
-- No rate limiting on generation, upload, or auth endpoints.
+- Rate limits cover the three charged routes only; `/api/auth`, `/api/conversation/session`,
+  `/api/stripe`, and history reads are unmetered. Counters live in Mongo, so a burst can
+  cost an extra write per request.
 - No Stripe event-idempotency table; replayed webhooks re-apply the same plan write.
 - History endpoints use a capped `limit` (60 images / 50 tracks), not cursor pagination.
 - Chat is request/response; no streaming, stop button, or token usage.
@@ -195,15 +197,15 @@ Rules:
 |---|---|---|---|
 | `POST` | `/api/auth` | Clerk | Upsert the Mongo user from `{ email, name }`; never trust a body `userId` |
 | `GET` | `/api/auth/current` | Clerk | Current user document (plan, `freeUsesCount`) |
-| `POST` | `/api/image` | Clerk + quota | `{ prompt, dimensions: "512*512", quantity: 1 \| 2 }`; stores 1–2 assets |
+| `POST` | `/api/image` | Clerk + rate limit + quota | `{ prompt, dimensions: "512*512", quantity: 1 \| 2 }`; stores 1–2 assets |
 | `GET` | `/api/image/history` | Clerk | Latest 60 image assets, fresh URLs |
 | `GET` | `/api/conversation/all` | Clerk | Owned sessions, newest first |
 | `GET` | `/api/conversation/:sessionId` | Clerk | Owned session or `404` |
 | `POST` | `/api/conversation/session` | Clerk (+ quota if initial message) | Empty session is free |
-| `POST` | `/api/conversation/message` | Clerk + quota | Appends user + assistant messages |
+| `POST` | `/api/conversation/message` | Clerk + rate limit + quota | Appends user + assistant messages |
 | `DELETE` | `/api/conversation/:sessionId` | Clerk | Owned session only |
 | `GET` | `/api/music/history` | Clerk | Latest 50 tracks |
-| `POST` | `/api/music/generate` | Clerk + quota | `{ prompt, duration: 5–60 }` |
+| `POST` | `/api/music/generate` | Clerk + rate limit + quota | `{ prompt, duration: 5–60 }` |
 | `GET` | `/api/dashboard/summary` | Clerk | Counts, 7-day series, plan/remaining |
 | `GET` | `/api/assets/:key{.+}` | Clerk | Local driver only; enforces `users/{userId}/` prefix |
 | `POST` | `/api/stripe` | Clerk | Creates Checkout Session; returns `url` |
@@ -218,6 +220,7 @@ Rules:
 | `403` | `QUOTA_EXCEEDED` |
 | `404` | `USER_NOT_INITIALIZED`, `SESSION_NOT_FOUND`, asset not found |
 | `409` | `DUPLICATE_REQUEST` (replayed Idempotency-Key) |
+| `429` | `RATE_LIMITED`; also sends `Retry-After` and `X-RateLimit-*` headers |
 | `502` | `PROVIDER_CALL_FAILED` |
 | `503` | `PROVIDER_NOT_CONFIGURED` |
 | `500` | Anything unexpected; log server-side, return a generic message |
@@ -244,6 +247,7 @@ Rules:
 | `Music` | `userId`, `prompt`, `audioUrl`, `objectKey`, `duration`, `provider`, `model` |
 | `Conversation` | `userId`, `sessionId` (unique), `messages[]` of `{ role, content, createdAt }` |
 | `UsageLedger` | `userId`, `kind`, `status: "reserved" \| "settled" \| "refunded"`, `idempotencyKey`, `reason` |
+| `RateLimitHit` | `_id = "{userId}:{route}:{windowStartMs}"`, `count`, `windowStart`, `expiresAt` (TTL index) |
 
 Rules:
 
@@ -502,6 +506,25 @@ bun run build
 - Make duplicate queue/webhook deliveries safe to re-apply or ignore.
 - Never leave a reservation stuck in `reserved`; add reconciliation if jobs become async.
 
+### 11.2.1 Rate limiting (`src/server/rate-limit.ts`)
+
+Fixed-window counters in MongoDB — no Redis in this stack, and in-memory counters break
+across instances.
+
+- One document per `{userId}:{route}:{windowStart}`; `_id` supplies uniqueness and a TTL
+  index (`expiresAt`) removes it after the window.
+- `findOneAndUpdate(..., { upsert: true, new: true })` increments atomically; one E11000
+  retry covers two concurrent first hits.
+- Budgets apply to PRO as well as FREE: they protect provider spend, not the plan.
+- Current budgets: image 10/min, music 6/min, conversation message 30/min, per user.
+  Change them only in `RATE_LIMITS`.
+- Middleware order is `zValidator` → `rateLimitGuard` → `quotaGuard`, so rejected payloads
+  and rate-limited requests never reserve quota.
+- The limiter **fails open** on a database error (logs and continues). Availability wins
+  here; revisit if abuse becomes real.
+- Responses always carry `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+  `X-RateLimit-Reset`; a denied request adds `Retry-After` and `429 RATE_LIMITED`.
+
 ### 11.3 Privacy
 
 - Do not log prompts, raw provider payloads, signed URLs, tokens, or personal data by
@@ -512,10 +535,10 @@ bun run build
 
 ### 11.4 Insecure areas to fix before public launch
 
-1. Add IP/user rate limiting to `/api/image`, `/api/music/generate`,
-   `/api/conversation/message`, and auth-adjacent routes.
-2. Persist Stripe event IDs and skip duplicates.
-3. Add a `stripe_events`-style audit collection for billing changes.
+1. Persist Stripe event IDs and skip duplicates.
+2. Add a `stripe_events`-style audit collection for billing changes.
+3. Extend rate limiting to `/api/auth`, `/api/conversation/session`, and `/api/stripe` if
+   those become abuse targets.
 4. Add upload validation if file upload is introduced (MIME sniffing, size, pixels).
 5. Add error monitoring (Sentry or equivalent) and a health check.
 
@@ -555,7 +578,7 @@ rewrite the backend to make it look different.
 
 ### Phase C — Reliability
 
-- [ ] Rate limiting on charged routes.
+- [x] Rate limiting on charged routes (Mongo fixed window, §11.2.1).
 - [ ] Stripe event idempotency + `stripe_events` collection.
 - [ ] Generate a request id and return it in error responses.
 - [ ] Bounded provider timeouts exposed as stable error codes.
@@ -603,6 +626,7 @@ If a step is unavailable in the demo environment, say why instead of staging a f
 | Free quota | 5 shared successful requests | Product owner changes pricing |
 | PRO quota | No cap in code; copy says "no free-tier cap" | A fair-use policy is enforced |
 | Tests | Bun built-in runner | Team standardizes on another runner |
+| Rate limits | Mongo fixed window, fail-open | Redis or an edge limiter is available |
 
 ---
 

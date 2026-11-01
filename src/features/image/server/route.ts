@@ -7,6 +7,7 @@ import {
   parseDimensions,
 } from "../schema";
 import { quotaGuard } from "@/middleware/quota-middleware";
+import { rateLimitGuard } from "@/middleware/rate-limit-middleware";
 import { generateImage } from "@/server/ai/image";
 import {
   ProviderCallError,
@@ -39,6 +40,7 @@ const app = new Hono()
   .post(
     "/",
     zValidator("json", imageGenerationSchema),
+    rateLimitGuard("image"),
     quotaGuard("image"),
     async (c) => {
       const auth = getAuth(c);
