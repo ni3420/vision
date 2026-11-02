@@ -147,6 +147,7 @@ function HistoryCard({ item }: { item: BackgroundItem }) {
             month: "short",
             day: "numeric",
           })}
+          {item.quality ? ` · ${item.quality === "full" ? "Full" : "Preview"}` : ""}
         </span>
         <span className="flex items-center gap-1">
           <button

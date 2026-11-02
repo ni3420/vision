@@ -15,6 +15,8 @@ export interface IBackground {
   height?: number;
   provider: string;
   model: string;
+  /** remove.bg output size; older cutouts predate this field. */
+  quality?: "preview" | "full";
   mock: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +37,7 @@ const BackgroundSchema = new Schema<IBackground>(
     height: { type: Number },
     provider: { type: String, required: true },
     model: { type: String, required: true },
+    quality: { type: String, enum: ["preview", "full"] },
     mock: { type: Boolean, default: false },
   },
   { timestamps: true }

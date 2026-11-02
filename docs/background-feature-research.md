@@ -133,3 +133,17 @@ Shipped the **cutout-only** MVP:
 - Music generation was removed and its quota/rate-limit/dashboard slots now belong to background removal.
 
 Not shipped (still research): AI scene backgrounds (`/v2/edit`), the free-tier split across cheaper providers, and Photoroom billing integration.
+
+## Provider update (2026-11-02): remove.bg
+
+A live Photoroom probe (real key, 512×512 JPEG) returned **HTTP 402 — credits exhausted**, so no cutout could be produced. The adapter mapped it correctly (`PROVIDER_CALL_FAILED`, `retryable: false`), but the account could not serve the feature.
+
+The working key in this workspace is remove.bg, so it is now the default provider:
+
+- Contract (docs-verified at <https://www.remove.bg/api>): `POST https://api.remove.bg/v1.0/removebg`, header `X-Api-Key`, multipart `image_file`, `size` (`auto`, `preview`, `full`, `50MP`, …), `format=png`; binary PNG response; max input 12 MB; failures return `{ "errors": [{ "title", "detail", "code" }] }`.
+- Cost model: **preview** is capped at 0.25 MP and covered by the free API allowance (50 calls/month); **full** runs up to 25 MP and consumes credits. Background Studio therefore exposes a Preview/Full selector, defaulting to Preview.
+- Implementation: `src/server/ai/removebg.ts`; `src/server/ai/background.ts` dispatches remove.bg → Photoroom → configured-provider error. `BACKGROUND_PROVIDER` pins a provider explicitly.
+- Unchanged: 10 MB upload cap, signature validation, private storage, quota/rate limits, history.
+- Live preview verified 2026-11-02: a 512×512 JPEG produced a 500×500 RGBA PNG (65,939 bytes, 91.3% fully transparent, ~4.3 s, provider `removebg`/`removebg-v1`, `mock: false`). Full-resolution behaviour and its credit cost remain unmeasured.
+
+Error-copy fix shipped alongside: provider failures now honour the server's `retryable` flag, so an exhausted-credit 402 shows the provider message without a Retry button that cannot succeed.

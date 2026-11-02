@@ -53,7 +53,7 @@ Read this file before changing code. Then:
 | Storage | Local filesystem, S3-compatible (`@aws-sdk/client-s3` v3), or ImageKit | `STORAGE_DRIVER=local \| s3 \| imagekit` |
 | Image AI | Cloudflare Workers AI `@cf/black-forest-labs/flux-1-schnell` | `src/server/ai/image.ts` |
 | Chat AI | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | 60 s per attempt, 3 bounded attempts; see §7.2.1 |
-| Background AI | Photoroom `segment-v1` (`https://sdk.photoroom.com/v1/segment`) | `src/server/ai/background.ts` |
+| Background AI | remove.bg `v1.0` (`https://api.remove.bg/v1.0/removebg`); Photoroom `segment-v1` fallback | `src/server/ai/removebg.ts`, dispatch in `src/server/ai/background.ts` |
 | Video | **Not implemented** | Honest "Not available yet" page |
 | Tests | `bun test` (Bun built-in runner) + `bun run smoke` | No Vitest/Jest; do not add one without a reason |
 | Package manager | Bun (`bun.lock`) | Do not introduce npm/pnpm/yarn lockfiles |
@@ -160,7 +160,7 @@ Hono app (src/app/api/[[...route]]/route.ts)
           │
           ├── MongoDB: users, assets, backgrounds, conversations, usageLedger, rateLimits
           ├── Storage: local .data/uploads, S3-compatible bucket, or ImageKit
-          └── Providers: Cloudflare, Groq, Gemini, Photoroom
+          └── Providers: Cloudflare, Groq, Gemini, remove.bg (Photoroom fallback)
 ```
 
 **Ownership boundaries**
@@ -377,7 +377,7 @@ Rules:
 |---|---|---|
 | Image | Cloudflare FLUX.2 [klein] 4B | multipart `prompt` (≤2048 chars), optional `width`/`height` (64–1536, default 1024), `guidance` (0–20, default 3.5), `seed`; **fixed 4-step schedule, no `steps` param**; 1–2 outputs per request |
 | Chat | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | last 12 messages + new message, 4000 chars each |
-| Background | Photoroom `segment-v1` | multipart `image_file` (PNG/JPEG/WebP, ≤10 MB per our limit), binary transparent PNG response |
+| Background | remove.bg `v1.0` (Photoroom `segment-v1` fallback) | multipart `image_file` (PNG/JPEG/WebP, ≤10 MB per our limit), `size=preview\|full`, `format=png`, binary transparent PNG response; preview is ≤0.25 MP and covered by the free API allowance, full bills credits |
 | Video | none | do not add controls |
 
 Verify live provider docs before changing model IDs, params, prices, or limits.
@@ -767,7 +767,7 @@ If a step is unavailable in the demo environment, say why instead of staging a f
 | Image provider | Cloudflare FLUX.1 schnell | Quality, cost, or latency no longer fit |
 | Chat provider | Groq `openai/gpt-oss-120b` first, Gemini `gemini-3.6-flash` fallback (C-1) | Rate limits, price, or quality change |
 | Chat transport | Request/response JSON until C-3; no fake stop button | Streaming is worth the SSE + abort work |
-| Background provider | Photoroom `segment-v1` | Contract, quality, or cost changes |
+| Background provider | remove.bg `v1.0` default, Photoroom fallback via `BACKGROUND_PROVIDER` | Contract, quality, or cost changes |
 | Video | Disabled, honest page | A verified provider + jobs + billing exist |
 | Free quota | 5 shared successful requests | Product owner changes pricing |
 | PRO quota | No cap in code; copy says "no free-tier cap" | A fair-use policy is enforced |

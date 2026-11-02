@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/features/auth/api/use-current-user";
 import UpgradeModal from "@/features/Subscription/components/upgarde-model";
+import type { BackgroundQuality } from "@/server/ai/types";
 import {
   BACKGROUND_MAX_BYTES,
   type BackgroundMime,
@@ -29,6 +30,15 @@ import { CHECKERBOARD_STYLE, downloadFile } from "../lib/download";
 
 const ACCEPTED: BackgroundMime[] = ["image/png", "image/jpeg", "image/webp"];
 
+const QUALITY_OPTIONS: { id: BackgroundQuality; label: string; hint: string }[] = [
+  { id: "preview", label: "Preview", hint: "Free" },
+  { id: "full", label: "Full resolution", hint: "Provider credits" },
+];
+
+function providerLabel(provider: string) {
+  return provider === "removebg" ? "remove.bg" : provider;
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -36,6 +46,7 @@ function formatBytes(bytes: number) {
 
 export const BackgroundStudio = () => {
   const [file, setFile] = useState<File | null>(null);
+  const [quality, setQuality] = useState<BackgroundQuality>("preview");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -84,7 +95,7 @@ export const BackgroundStudio = () => {
 
   const submit = () => {
     if (!file) return;
-    mutate({ file }, { onError: handleMutationError });
+    mutate({ file, quality }, { onError: handleMutationError });
   };
 
   const retry = () => {
@@ -203,6 +214,53 @@ export const BackgroundStudio = () => {
         </div>
 
         <div className="space-y-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Output size
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Output size"
+            className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-secondary/40 p-1"
+          >
+            {QUALITY_OPTIONS.map((option) => {
+              const active = quality === option.id;
+
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setQuality(option.id)}
+                  disabled={isPending}
+                  className={`flex flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 ${
+                    active
+                      ? "bg-background shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span
+                    className={`text-[11px] font-semibold ${
+                      active ? "text-foreground" : ""
+                    }`}
+                  >
+                    {option.label}
+                  </span>
+                  <span className="text-[9px] font-medium text-muted-foreground">
+                    {option.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            {quality === "preview"
+              ? "Up to 0.25 MP, covered by remove.bg's free preview allowance."
+              : "Native resolution up to 25 MP. Uses credits on your remove.bg account."}
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
           <Button
             type="button"
             onClick={submit}
@@ -233,7 +291,7 @@ export const BackgroundStudio = () => {
               ) : null}
               {background ? (
                 <span className="rounded-md border border-border px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
-                  {background.provider} · {background.model}
+                  {providerLabel(background.provider)} · {background.model}
                 </span>
               ) : null}
             </div>
@@ -318,9 +376,9 @@ export const BackgroundStudio = () => {
 
               {data?.mock ? (
                 <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
-                  This is a local placeholder, not a Photoroom cutout. Set{" "}
+                  This is a local placeholder, not a remove.bg cutout. Set{" "}
                   <code className="rounded bg-black/10 px-1 dark:bg-white/10">
-                    PHOTOROOM_API_KEY
+                    REMOVE_BG_API_KEY
                   </code>{" "}
                   to enable real background removal.
                 </p>

@@ -7,6 +7,7 @@ import {
   warnMock,
 } from "./runtime";
 import { fetchWithRetry, isRetryableStatus, type FetchLike } from "./retry";
+import { callRemoveBg } from "./removebg";
 import type { BackgroundRemovalRequest, BackgroundRemovalResult } from "./types";
 
 const PHOTOROOM_SEGMENT_URL = "https://sdk.photoroom.com/v1/segment";
@@ -196,15 +197,47 @@ async function renderMockCutout(
   }
 }
 
+const PROVIDER_KEYS = {
+  removebg: "REMOVE_BG_API_KEY",
+  photoroom: "PHOTOROOM_API_KEY",
+} as const;
+
+type BackgroundProvider = keyof typeof PROVIDER_KEYS;
+
+function configuredKey(provider: BackgroundProvider): string | undefined {
+  const value = process.env[PROVIDER_KEYS[provider]]?.trim();
+  return value && looksConfigured(value) ? value : undefined;
+}
+
+/**
+ * remove.bg is the default. BACKGROUND_PROVIDER pins a provider explicitly,
+ * which also keeps tests from picking up whichever key happens to be set.
+ */
+function selectProvider(): BackgroundProvider | null {
+  const forced = process.env.BACKGROUND_PROVIDER?.trim().toLowerCase();
+  if (forced === "removebg" || forced === "photoroom") return forced;
+  if (configuredKey("removebg")) return "removebg";
+  if (configuredKey("photoroom")) return "photoroom";
+  return null;
+}
+
 export async function removeBackground(
   request: BackgroundRemovalRequest
 ): Promise<BackgroundRemovalResult> {
-  const mode = resolveMode([process.env.PHOTOROOM_API_KEY]);
+  const provider = selectProvider();
+  const key = provider ? configuredKey(provider) : undefined;
+  const mode = resolveMode(key ? [key] : []);
 
   if (mode === "mock") {
     warnMock("background");
     return renderMockCutout(request);
   }
 
-  return callPhotoroom(request);
+  if (!provider || !key) {
+    throw new ProviderNotConfiguredError(
+      "Background provider not configured: set REMOVE_BG_API_KEY (or PHOTOROOM_API_KEY)."
+    );
+  }
+
+  return provider === "removebg" ? callRemoveBg(request) : callPhotoroom(request);
 }

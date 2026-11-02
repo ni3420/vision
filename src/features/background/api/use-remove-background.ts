@@ -3,6 +3,7 @@ import type { InferResponseType } from "hono";
 
 import { client } from "@/lib/client";
 import { newIdempotencyKey } from "@/lib/idempotency";
+import type { BackgroundQuality } from "@/server/ai/types";
 
 export interface BackgroundItem {
   id: string;
@@ -15,6 +16,7 @@ export interface BackgroundItem {
   bytes: number;
   provider: string;
   model: string;
+  quality: BackgroundQuality | null;
   mock: boolean;
   createdAt: string | Date;
 }
@@ -47,10 +49,15 @@ function apiError(
 export const useRemoveBackground = () => {
   const queryClient = useQueryClient();
 
-  return useMutation<RemoveBackgroundResponse, BackgroundApiError, { file: File }>({
-    mutationFn: async ({ file }) => {
+  return useMutation<
+    RemoveBackgroundResponse,
+    BackgroundApiError,
+    { file: File; quality: BackgroundQuality }
+  >({
+    mutationFn: async ({ file, quality }) => {
       const form = new FormData();
       form.append("image", file, file.name);
+      form.append("quality", quality);
 
       let res: Response;
       try {

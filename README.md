@@ -20,7 +20,7 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Image generation | Cloudflare Workers AI FLUX.2 [klein] 4B through a Worker or the API directly, 1–2 images per request, private storage; prompt examples, ratio tiles, cost label, retryable error states |
 | Theming | Light, dark, and system toggle in the navbar (`next-themes`, token-driven) |
 | Conversation | Groq `openai/gpt-oss-120b` with Gemini `gemini-3.6-flash` fallback, 60 s timeout and 3 bounded retries; request/response (no streaming) |
-| Background removal | Photoroom `segment-v1`, transparent PNG, original kept for comparison; a labelled local mock runs when `PHOTOROOM_API_KEY` is absent outside production |
+| Background removal | remove.bg `removebg-v1` (preview by default, full resolution uses credits), transparent PNG, original kept for comparison; a labelled local mock runs when no background key is present outside production |
 | Video generation | Not available — no provider is configured or integrated |
 | Free plan quota | 5 generations per account, enforced server-side |
 | Pro upgrade | Stripe Checkout; the webhook flips the plan to PRO |
@@ -39,7 +39,7 @@ flowchart TD
     CF["Cloudflare Worker<br/>FLUX.2 klein 4B"]
     Groq["Groq<br/>chat completions"]
     Gemini["Gemini<br/>fallback"]
-    Photoroom["Photoroom<br/>segment-v1"]
+    RemoveBg["remove.bg<br/>v1.0"]
     Stripe["Stripe<br/>Checkout + webhook"]
 
     User --> Next
@@ -49,7 +49,7 @@ flowchart TD
     API --> CF
     API --> Groq
     API -. fallback .-> Gemini
-    API --> Photoroom
+    API --> RemoveBg
     API --> Stripe
     Stripe -. webhook .-> API
 ```
@@ -89,7 +89,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | Runtime mode | `AI_MODE` (`auto` \| `live` \| `mock`) | Optional, defaults to `auto` |
 | Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` (your own Worker), or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (direct) | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
-| Background provider | `PHOTOROOM_API_KEY` | For live background removal |
+| Background provider | `REMOVE_BG_API_KEY` (default), `BACKGROUND_PROVIDER`, `PHOTOROOM_API_KEY` (fallback) | For live background removal |
 | Storage | `STORAGE_DRIVER` (`s3` \| `imagekit` \| `local`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Backblaze B2 (`s3`) in this repo's `.env.local`; `local` is dev-only |
 | Billing | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
 
@@ -99,7 +99,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 
 - **Image** — a locally rendered gradient card with the prompt, resized with `sharp`.
 - **Chat** — a canned reply that repeats the prompt.
-- **Background** — a locally masked placeholder PNG with a visible label, so the comparison UI and alpha channel can be exercised without spending Photoroom credits.
+- **Background** — a locally masked placeholder PNG with a visible label, so the comparison UI and alpha channel can be exercised without spending remove.bg credits.
 
 In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFIGURED` instead of silently faking output.
 
@@ -193,7 +193,7 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 | --- | --- |
 | `users` | Clerk `userId`, email, name, plan, `freeUsesCount` |
 | `assets` | Image metadata: object key, MIME, bytes, dimensions, prompt, provider, model |
-| `backgrounds` | Source and cutout object keys, MIME, bytes, dimensions, provider, model, mock flag |
+| `backgrounds` | Source and cutout object keys, MIME, bytes, dimensions, provider, model, quality (`preview`/`full`), mock flag |
 | `usage_ledger` | Reservation records with a unique sparse idempotency key |
 | `rate_limits` | Per-user, per-route window counters; a TTL index expires them |
 | `conversations` | Session metadata and message history |
@@ -202,7 +202,7 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 
 - **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
 - **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image and conversation schemas, chat/generation error copy, grouping and relative-time helpers, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
-- **Background removal** calls Photoroom's segment endpoint; without `PHOTOROOM_API_KEY` outside production it returns a visibly labelled local mock. No live Photoroom call was made in this environment (no key), so the contract is documentation- and stub-tested only.
+- **Background removal** calls remove.bg v1.0 (Photoroom remains an explicit fallback via `BACKGROUND_PROVIDER`). A live preview call succeeded on 2026-11-02: a 512×512 JPEG produced a 500×500 RGBA PNG, 91.3% fully transparent, in ~4.3 s. Full-resolution output consumes remove.bg credits and has not been exercised. Without any background key outside production the route returns a visibly labelled local mock.
 - **UI verification** for the image-generator, conversation, and background-studio surfaces is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
 - **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
 - **Live chat** targets `openai/gpt-oss-120b` and `gemini-3.6-flash`, but those IDs are documentation-verified rather than exercised here: the local key is a placeholder, so no provider call was made. Chat is still request/response — no streaming, stop button, or token usage.

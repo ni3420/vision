@@ -4,7 +4,12 @@ import { removeBackground } from "./background";
 import { ProviderCallError, ProviderNotConfiguredError } from "./runtime";
 
 const KEY = "photoroom_test_key_0123456789";
-const TOUCHED_ENV = ["AI_MODE", "PHOTOROOM_API_KEY"] as const;
+const TOUCHED_ENV = [
+  "AI_MODE",
+  "BACKGROUND_PROVIDER",
+  "REMOVE_BG_API_KEY",
+  "PHOTOROOM_API_KEY",
+] as const;
 
 const originalFetch = globalThis.fetch;
 const originalEnv = Object.fromEntries(
@@ -45,7 +50,9 @@ function stubFetch(respond: () => Response) {
 beforeEach(() => {
   calls = [];
   process.env.AI_MODE = "live";
+  process.env.BACKGROUND_PROVIDER = "photoroom";
   process.env.PHOTOROOM_API_KEY = KEY;
+  delete process.env.REMOVE_BG_API_KEY;
 });
 
 afterEach(() => {

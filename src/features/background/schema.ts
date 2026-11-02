@@ -1,4 +1,11 @@
+import type { BackgroundQuality } from "@/server/ai/types";
+
 export const BACKGROUND_MAX_BYTES = 10 * 1024 * 1024;
+
+/** Unknown values fall back to the free preview size, the cheaper direction. */
+export function parseBackgroundQuality(value: unknown): BackgroundQuality {
+  return value === "full" ? "full" : "preview";
+}
 
 export type BackgroundMime = "image/png" | "image/jpeg" | "image/webp";
 

@@ -20,6 +20,7 @@ import {
 import { Background, type IBackground } from "@/models/background.models";
 import {
   BACKGROUND_MAX_BYTES,
+  parseBackgroundQuality,
   validateBackgroundUpload,
   type BackgroundUploadError,
 } from "../schema";
@@ -52,6 +53,7 @@ async function serializeBackground(
     bytes: background.bytes,
     provider: background.provider,
     model: background.model,
+    quality: background.quality ?? null,
     mock: background.mock,
     createdAt: background.createdAt,
   };
@@ -130,11 +132,14 @@ const app = new Hono()
       );
     }
 
+    const quality = parseBackgroundQuality(body.quality);
+
     try {
       const cutout = await removeBackground({
         bytes,
         mime: check.mime,
         filename: `source.${check.extension}`,
+        quality,
       });
 
       const sourceKey = buildObjectKey(auth.userId, "background", check.extension);
@@ -166,6 +171,7 @@ const app = new Hono()
           height: cutout.height,
           provider: cutout.provider,
           model: cutout.model,
+          quality,
           mock: cutout.mock,
         });
 

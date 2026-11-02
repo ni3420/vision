@@ -28,10 +28,17 @@ export interface ChatGenerationResult {
   mock: boolean;
 }
 
+/**
+ * remove.bg pricing depends on output size: "preview" is capped at 0.25 MP and
+ * covered by the free API allowance, "full" bills provider credits.
+ */
+export type BackgroundQuality = "preview" | "full";
+
 export interface BackgroundRemovalRequest {
   bytes: Buffer;
   mime: string;
   filename: string;
+  quality?: BackgroundQuality;
 }
 
 export interface BackgroundRemovalResult {

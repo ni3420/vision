@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   BACKGROUND_MAX_BYTES,
+  parseBackgroundQuality,
   sniffImageMime,
   validateBackgroundUpload,
 } from "./schema";
@@ -25,6 +26,19 @@ describe("sniffImageMime", () => {
   it("returns null for unknown content", () => {
     expect(sniffImageMime(bytesFrom([0x47, 0x49, 0x46, 0x38]))).toBeNull();
     expect(sniffImageMime(bytesFrom([]))).toBeNull();
+  });
+});
+
+describe("parseBackgroundQuality", () => {
+  it("accepts the two paid/free sizes", () => {
+    expect(parseBackgroundQuality("preview")).toBe("preview");
+    expect(parseBackgroundQuality("full")).toBe("full");
+  });
+
+  it("defaults anything else to the free preview size", () => {
+    expect(parseBackgroundQuality(undefined)).toBe("preview");
+    expect(parseBackgroundQuality("50MP")).toBe("preview");
+    expect(parseBackgroundQuality(42)).toBe("preview");
   });
 });
 

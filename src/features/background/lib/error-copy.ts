@@ -67,16 +67,25 @@ export function describeBackgroundError(
     case "PROVIDER_NOT_CONFIGURED":
       return {
         title: "Background service not configured",
-        message: "This workspace has no Photoroom key. Add PHOTOROOM_API_KEY to enable cutouts.",
+        message:
+          "This workspace has no remove.bg key. Add REMOVE_BG_API_KEY to enable cutouts.",
         code,
         retryable: false,
       };
     case "PROVIDER_CALL_FAILED":
+      // The server marks exhausted credits and rejected keys as non-retryable;
+      // surfacing its message avoids offering a retry that cannot succeed.
       return {
-        title: "The cutout service is busy",
-        message: "Your credit was not used. Try again in a moment.",
+        title: retryable
+          ? "The cutout service is busy"
+          : "The cutout service could not process this image",
+        message:
+          serverMessage ||
+          (retryable
+            ? "Your credit was not used. Try again in a moment."
+            : "Your credit was not used. Check the provider account, then try again."),
         code,
-        retryable: true,
+        retryable,
       };
     case "STORAGE_WRITE_FAILED":
       return {
