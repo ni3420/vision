@@ -39,7 +39,7 @@ export default function NotFound() {
         {/* CTA Buttons */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link
-            href="/"
+            href="/dashboard"
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-primary text-primary-foreground font-semibold text-xs hover:opacity-90 active:scale-95 transition-all duration-200 shadow-lg shadow-primary/25 cursor-pointer"
           >
             <ArrowLeft className="h-4 w-4" />

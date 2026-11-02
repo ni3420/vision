@@ -26,7 +26,7 @@ const NAV_ITEMS: {
   {
     label: "Dashboard",
     icon: LayoutDashboard,
-    href: "/",
+    href: "/dashboard",
   },
   {
     label: "Image Generator",
@@ -65,7 +65,7 @@ const SideBar = () => {
     try {
       setIsLoggingOut(true);
       toast.loading("Signing out...", { id: "logout-toast" });
-      await signOut({ redirectUrl: "/sign-in" });
+      await signOut({ redirectUrl: "/auth/sign-in" });
     } catch {
       toast.error("Failed to sign out. Please try again.", { id: "logout-toast" });
       setIsLoggingOut(false);

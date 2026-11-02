@@ -31,7 +31,7 @@ const NAV_ITEMS: {
   {
     label: "Dashboard",
     icon: LayoutDashboard,
-    href: "/",
+    href: "/dashboard",
   },
   {
     label: "Image Generator",

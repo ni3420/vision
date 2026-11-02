@@ -64,7 +64,7 @@ const Page = () => {
               <span>Generate images instead</span>
             </Link>
             <Link
-              href="/"
+              href="/dashboard"
               className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-secondary hover:bg-secondary/80 border border-border text-xs font-bold text-foreground transition-colors flex items-center justify-center gap-2"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
