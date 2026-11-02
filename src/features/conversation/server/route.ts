@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { getAuth } from "@clerk/hono";
-import { Conversation } from "@/models/conversation.models";
-import { CreateConversationSchema, PostMessageSchema } from "../schema";
+import { Conversation, type MessageType } from "@/models/conversation.models";
+import {
+  CreateConversationSchema,
+  PostMessageSchema,
+  RenameConversationSchema,
+} from "../schema";
 import { generateChatReply } from "@/server/ai/chat";
 import {
   ProviderCallError,
@@ -23,6 +28,8 @@ import type { Context } from "hono";
 import type { ChatMessage } from "@/server/ai/types";
 
 const MODEL_HISTORY_LIMIT = 12;
+const LIST_DEFAULT_LIMIT = 50;
+const LIST_MAX_LIMIT = 100;
 
 function conversationErrorResponse(
   c: Context,
@@ -60,12 +67,26 @@ function conversationErrorResponse(
   );
 }
 
-function toChatHistory(
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>
-): ChatMessage[] {
+function toChatHistory(messages: MessageType[]): ChatMessage[] {
   return messages
     .slice(-MODEL_HISTORY_LIMIT)
     .map((message) => ({ role: message.role, content: message.content }));
+}
+
+function toReplyMetadata(message: unknown) {
+  const source = message as MessageType & { _id?: { toString(): string } };
+  return {
+    id: source?._id?.toString() ?? null,
+    provider: source?.provider ?? null,
+    model: source?.model ?? null,
+    mock: source?.mock ?? false,
+  };
+}
+
+function parseLimit(raw: string | undefined): number {
+  const value = Number(raw ?? LIST_DEFAULT_LIMIT);
+  if (!Number.isFinite(value)) return LIST_DEFAULT_LIMIT;
+  return Math.min(Math.max(Math.trunc(value), 1), LIST_MAX_LIMIT);
 }
 
 const app = new Hono()
@@ -80,25 +101,28 @@ const app = new Hono()
         );
       }
 
+      const limit = parseLimit(c.req.query("limit"));
       const conversations = await Conversation.find({ userId: auth.userId })
-        .select("sessionId messages updatedAt")
-        .sort({ updatedAt: -1 });
+        .select("sessionId title messages updatedAt")
+        .sort({ updatedAt: -1 })
+        .limit(limit);
 
       const data = conversations.map((conversation) => {
-        const messages = conversation.messages ?? [];
-        const firstUser = messages.find(
-          (message: { role: string; content: string }) => message.role === "user"
-        );
-        const last = messages[messages.length - 1] as
-          | { content?: string }
-          | undefined;
+        const messages: MessageType[] = conversation.messages ?? [];
+        const firstUser = messages.find((message) => message.role === "user");
+        const last = messages[messages.length - 1];
 
         return {
           sessionId: conversation.sessionId,
-          title: firstUser?.content.trim().slice(0, 120) || "New conversation",
+          title:
+            conversation.title?.trim() ||
+            firstUser?.content.trim().slice(0, 120) ||
+            "New conversation",
           messageCount: messages.length,
           preview: (last?.content ?? "").trim().slice(0, 140),
           updatedAt: conversation.updatedAt,
+          lastMessageAt:
+            last?.createdAt ?? conversation.updatedAt,
         };
       });
 
@@ -146,7 +170,7 @@ const app = new Hono()
     }
   })
 
-  // 3. CREATE OR INITIALIZE A NEW SESSION (CHARGED ONLY WHEN AN INITIAL MESSAGE IS GENERATED)
+  // 3. CREATE A NEW SESSION (CHARGED ONLY WHEN AN INITIAL MESSAGE IS GENERATED)
   .post(
     "/session",
     zValidator("json", CreateConversationSchema),
@@ -160,7 +184,8 @@ const app = new Hono()
           );
         }
 
-        const { sessionId, initialMessage } = c.req.valid("json");
+        const { sessionId: requestedSessionId, initialMessage } = c.req.valid("json");
+        const sessionId = requestedSessionId ?? `session_${randomUUID()}`;
 
         const existing = await Conversation.findOne({
           sessionId,
@@ -168,54 +193,84 @@ const app = new Hono()
         });
 
         if (existing) {
-          return c.json({ success: true, data: existing }, 201);
+          const last = existing.messages?.[existing.messages.length - 1];
+          return c.json(
+            {
+              success: true,
+              data: existing,
+              mock: last?.mock ?? false,
+              provider: last?.provider ?? null,
+              model: last?.model ?? null,
+            },
+            201
+          );
         }
 
-        let conversation;
-        let mock = false;
-
-        if (initialMessage) {
-          const limit = await checkRateLimit(c, "conversation");
-          if (!limit.allowed) return c.json(limit.body, limit.status);
-
-          const { value } = await runWithQuota(
-            {
-              userId: auth.userId,
-              kind: "conversation",
-              reason: "session-initial-message",
-              idempotencyKey:
-                c.req.header("idempotency-key")?.trim() || undefined,
-            },
-            async () => {
-              const reply = await generateChatReply([], initialMessage.content);
-              const created = await Conversation.create({
-                userId: auth.userId,
-                sessionId,
-                messages: [
-                  initialMessage,
-                  {
-                    role: "assistant",
-                    content: reply.text,
-                    createdAt: new Date(),
-                  },
-                ],
-              });
-
-              return { created, mock: reply.mock };
-            }
-          );
-
-          conversation = value.created;
-          mock = value.mock;
-        } else {
-          conversation = await Conversation.create({
+        if (!initialMessage) {
+          const conversation = await Conversation.create({
             userId: auth.userId,
             sessionId,
             messages: [],
           });
+
+          return c.json(
+            {
+              success: true,
+              data: conversation,
+              mock: false,
+              provider: null,
+              model: null,
+            },
+            201
+          );
         }
 
-        return c.json({ success: true, data: conversation, mock }, 201);
+        const limit = await checkRateLimit(c, "conversation");
+        if (!limit.allowed) return c.json(limit.body, limit.status);
+
+        const { value } = await runWithQuota(
+          {
+            userId: auth.userId,
+            kind: "conversation",
+            reason: "session-initial-message",
+            idempotencyKey: c.req.header("idempotency-key")?.trim() || undefined,
+          },
+          async () => {
+            const reply = await generateChatReply([], initialMessage.content);
+            const created = await Conversation.create({
+              userId: auth.userId,
+              sessionId,
+              messages: [
+                { role: "user", content: initialMessage.content, createdAt: new Date() },
+                {
+                  role: "assistant",
+                  content: reply.text,
+                  createdAt: new Date(),
+                  provider: reply.provider,
+                  model: reply.model,
+                  mock: reply.mock,
+                },
+              ],
+            });
+
+            return { created, reply };
+          }
+        );
+
+        const reply = toReplyMetadata(
+          value.created.messages[value.created.messages.length - 1]
+        );
+
+        return c.json(
+          {
+            success: true,
+            data: value.created,
+            mock: reply.mock,
+            provider: reply.provider,
+            model: reply.model,
+          },
+          201
+        );
       } catch (error) {
         return conversationErrorResponse(
           c,
@@ -271,11 +326,18 @@ const app = new Hono()
             $push: {
               messages: {
                 $each: [
-                  message,
+                  {
+                    role: "user",
+                    content: message.content,
+                    createdAt: new Date(),
+                  },
                   {
                     role: "assistant",
                     content: reply.text,
                     createdAt: new Date(),
+                    provider: reply.provider,
+                    model: reply.model,
+                    mock: reply.mock,
                   },
                 ],
               },
@@ -284,8 +346,17 @@ const app = new Hono()
           { new: true }
         );
 
+        const lastMessage = updatedConversation
+          ? updatedConversation.messages[updatedConversation.messages.length - 1]
+          : undefined;
+
         return c.json(
-          { success: true, data: updatedConversation, mock: reply.mock },
+          {
+            success: true,
+            data: updatedConversation,
+            mock: reply.mock,
+            reply: toReplyMetadata(lastMessage),
+          },
           200
         );
       } catch (error) {
@@ -298,7 +369,51 @@ const app = new Hono()
     }
   )
 
-  // 5. DELETE A CONVERSATION SESSION
+  // 5. RENAME A CONVERSATION
+  .patch(
+    "/:sessionId",
+    zValidator("json", RenameConversationSchema),
+    async (c) => {
+      try {
+        const auth = getAuth(c);
+        if (!auth || !auth.userId) {
+          return c.json(
+            { success: false, code: "UNAUTHORIZED", error: "Unauthorized access vector" },
+            401
+          );
+        }
+
+        const sessionId = c.req.param("sessionId");
+        const { title } = c.req.valid("json");
+
+        const updated = await Conversation.findOneAndUpdate(
+          { sessionId, userId: auth.userId },
+          { $set: { title } },
+          { new: true }
+        );
+
+        if (!updated) {
+          return c.json(
+            { success: false, code: "SESSION_NOT_FOUND", error: "Conversation session not found" },
+            404
+          );
+        }
+
+        return c.json(
+          { success: true, data: { sessionId, title: updated.title } },
+          200
+        );
+      } catch (error) {
+        console.error("Error renaming conversation:", error);
+        return c.json(
+          { success: false, code: "SESSION_RENAME_FAILED", error: "Failed to rename session" },
+          500
+        );
+      }
+    }
+  )
+
+  // 6. DELETE A CONVERSATION SESSION
   .delete("/:sessionId", async (c) => {
     try {
       const auth = getAuth(c);

@@ -4,11 +4,15 @@ export interface MessageType {
   role: "user" | "assistant" | "system"
   content: string
   createdAt?: Date
+  provider?: string
+  model?: string
+  mock?: boolean
 }
 
 export interface ConversationType extends Document {
   userId: string
   sessionId: string
+  title?: string
   messages: MessageType[]
   createdAt: Date
   updatedAt: Date
@@ -28,6 +32,15 @@ const MessageSchema = new Schema<MessageType>({
     type: Date,
     default: Date.now,
   },
+  provider: {
+    type: String,
+  },
+  model: {
+    type: String,
+  },
+  mock: {
+    type: Boolean,
+  },
 })
 
 const ConversationSchema = new Schema<ConversationType>(
@@ -42,6 +55,9 @@ const ConversationSchema = new Schema<ConversationType>(
       required: true,
       unique: true,
       index: true,
+    },
+    title: {
+      type: String,
     },
     messages: {
       type: [MessageSchema],

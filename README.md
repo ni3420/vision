@@ -165,10 +165,11 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `GET` | `/api/image/history` | 60 newest image assets |
 | `POST` | `/api/music/generate` | Generate a track and store it |
 | `GET` | `/api/music/history` | 50 newest tracks with fresh URLs |
-| `POST` | `/api/conversation/session` | Create a conversation (optionally with a first message) |
-| `POST` | `/api/conversation/message` | Append a message and get the reply |
-| `GET` | `/api/conversation/all` | Session summaries (title, message count, preview) for the current user |
+| `POST` | `/api/conversation/session` | Create a conversation (optionally with a first message; the server generates the id) |
+| `POST` | `/api/conversation/message` | Append a user message and get the reply |
+| `GET` | `/api/conversation/all` | Session summaries (title, message count, preview, last message time); `?limit=` 1–100 |
 | `GET` | `/api/conversation/:sessionId` | One conversation |
+| `PATCH` | `/api/conversation/:sessionId` | Rename a conversation (`title`, 1–80 chars) |
 | `DELETE` | `/api/conversation/:sessionId` | Delete a conversation |
 | `GET` | `/api/dashboard/summary` | Counts, 7-day activity series, plan and remaining free uses |
 | `GET` | `/api/assets/:key` | Owner-only local asset read |
@@ -199,11 +200,11 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 ## Known limitations
 
 - **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
-- **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image schemas, generation error copy, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
-- **UI verification** for the image-generator redesign is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
+- **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image and conversation schemas, chat/generation error copy, grouping and relative-time helpers, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
+- **UI verification** for the image-generator and conversation redesigns is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
 - **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
 - **Live chat** targets `openai/gpt-oss-120b` and `gemini-3.6-flash`, but those IDs are documentation-verified rather than exercised here: the local key is a placeholder, so no provider call was made. Chat is still request/response — no streaming, stop button, or token usage.
-- **Rate limiting** covers the three charged routes only; auth, session creation (including one with an initial message), checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable.
+- **Rate limiting** covers the three charged routes only; auth, creating an empty session, checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable. A session created with a first message is rate limited.
 - **Quota** is a lifetime free allowance of 5 units; it does not reset monthly. PRO has no usage cap in code.
 - The free-quota path has not been exercised against a live MongoDB here; unit tests mock the models and the HTTP flow is statically verified only.
 - History endpoints return the newest 60 images / 50 tracks; cursor pagination is not implemented.

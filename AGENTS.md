@@ -65,9 +65,9 @@ Read this file before changing code. Then:
 |---|---|---|
 | Types | `bun run typecheck` | **PASS** |
 | Lint | `bun run lint` | **PASS — 0 problems** |
-| Unit tests | `bun run test` | **PASS — 113 tests / 12 files** |
+| Unit tests | `bun run test` | **PASS — 140 tests / 15 files** |
 | Adapters | `bun run smoke` | **PASS** (forces mock mode + local storage) |
-| Build | `bun run build` | **PASS** — compiled in 24.4s, 9 routes (2026-11-02) |
+| Build | `bun run build` | **PASS** — compiled in 31.6s, 9 routes (2026-11-02) |
 
 One non-blocking Turbopack warning remains for the runtime-computed local storage root
 (`src/server/storage.ts`); it is intentional, not an error.
@@ -91,8 +91,8 @@ sign-in and no session or database is available in this environment.
 - Chat is request/response; no streaming, stop button, or token usage (C-3).
 - Chat retries and timeouts are bounded (2026-11-02); the adapter still runs inside one
   HTTP request, so a slow reply holds the connection.
-- `GET /api/conversation/all` returns a session summary, not full messages; it is not
-  paginated yet.
+- `GET /api/conversation/all` returns a session summary, not full messages; it is capped by
+  `?limit=` (default 50, max 100) and is not cursor-paginated.
 - Chat model IDs are documentation-verified, not live-tested here (the local key is a
   placeholder), so a real deployment must confirm access.
 - Image generation targets FLUX.2 klein via multipart. The adapter is covered by tests with
@@ -100,7 +100,7 @@ sign-in and no session or database is available in this environment.
   call, and the Worker has never been deployed.
 - No async job queue: one HTTP request holds the provider call.
 - `Asset.kind` allows `"music"`, but music tracks live in the `Music` collection.
-- `README.md` and this file are the only project documentation; there is no `docs/`.
+- `README.md` and this file plus `docs/conversation-redesign.md` are the project docs.
 
 ---
 
@@ -115,8 +115,7 @@ state.
 |---|---|---|---|
 | `/` | Dashboard | Counts, 7-day activity, workload split, plan meter, quick actions | loading skeleton, empty, error + retry |
 | `/image-generator` | Image Studio | Prompt textarea with counter and examples, ratio tiles, 1–2 variations, cost label, result grid, history tab | idle (skeletons, error + retry, empty), success, mock badge, quota (403 + upgrade modal) |
-| `/conversation` | Chat | Session list (title, message count), message thread, composer, delete session | no session, empty thread, pending reply, provider error + retry, mock reply |
-| `/conversation` (C-2 target) | Chat | Rendered markdown, optimistic messages, textarea composer, suggested prompts, delete confirm, deep link | sending, send error with draft restored, mock badge |
+| `/conversation` | Chat | Sessions rail (search, grouping, relative time, delete confirm), markdown thread with copy, auto-growing composer, optimistic send, inline rename, `?session=` deep link | no session, empty thread, sending/thinking, send error + retry, mock badge, 404 |
 | `/music-generator` | Music Studio | Prompt, 8/15/20 s duration, track player, history | idle, synthesizing, success, quota, provider error |
 | `/video-generator` | Video | Honest "not available yet" explanation with links to working tools | static |
 | `/auth/sign-in`, `/auth/sign-up` | Auth | Clerk-hosted components | Clerk-managed |
@@ -218,10 +217,11 @@ Rules:
 | `GET` | `/api/auth/current` | Clerk | Current user document (plan, `freeUsesCount`) |
 | `POST` | `/api/image` | Clerk + rate limit + quota | `{ prompt, dimensions: "512*512", quantity: 1 \| 2 }`; stores 1–2 assets |
 | `GET` | `/api/image/history` | Clerk | Latest 60 image assets, fresh URLs |
-| `GET` | `/api/conversation/all` | Clerk | Owned sessions, newest first |
+| `GET` | `/api/conversation/all` | Clerk | Owned session summaries, newest first; `?limit=` 1–100 (default 50) |
 | `GET` | `/api/conversation/:sessionId` | Clerk | Owned session or `404` |
-| `POST` | `/api/conversation/session` | Clerk (+ quota if initial message) | Empty session is free |
-| `POST` | `/api/conversation/message` | Clerk + rate limit + quota | Appends user + assistant messages |
+| `POST` | `/api/conversation/session` | Clerk (+ quota if initial message) | `sessionId` optional (server generates `session_<uuid>`); empty session is free |
+| `POST` | `/api/conversation/message` | Clerk + rate limit + quota | Appends user + assistant messages; a non-`user` role is rejected `400` |
+| `PATCH` | `/api/conversation/:sessionId` | Clerk | Rename, `{ title }` 1–80 chars |
 | `DELETE` | `/api/conversation/:sessionId` | Clerk | Owned session only |
 | `GET` | `/api/music/history` | Clerk | Latest 50 tracks |
 | `POST` | `/api/music/generate` | Clerk + rate limit + quota | `{ prompt, duration: 5–60 }` |
@@ -410,8 +410,13 @@ What the adapter does now:
 - `ProviderCallError.retryable` is returned in the conversation 502 body.
 - `POST /api/conversation/session` is rate limited when `initialMessage` is present;
   `/api/conversation/message` requires an existing owned session (404, no upsert).
-- `GET /api/conversation/all` returns `{ sessionId, title, messageCount, preview, updatedAt }`
-  instead of every message.
+- `POST /api/conversation/message` ignores a client-supplied role: only `"user"` is accepted
+  (anything else is `400`) and assistant turns are written server-side only.
+- Assistant messages store `provider`, `model`, and `mock`; clients label mock replies
+  instead of presenting them as real model output.
+- `GET /api/conversation/all` returns
+  `{ sessionId, title, messageCount, preview, updatedAt, lastMessageAt }` instead of every
+  message; `title` prefers the rename override, then the first user message.
 
 Model IDs are documentation-verified, not live-tested in this environment: the local Gemini
 key is a placeholder and no Groq key is set, so spending credits was out of scope.
