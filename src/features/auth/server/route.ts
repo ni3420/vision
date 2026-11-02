@@ -116,7 +116,12 @@ const app = new Hono()
 
     return c.json({
       success: true,
-      data: user,
+      data: {
+        ...user.toObject(),
+        // A stored subscription id, not just a customer id, is what the
+        // Billing Portal can act on; a manually granted plan has neither.
+        canManageSubscription: Boolean(user.stripeSubscriptionId),
+      },
     }, 200);
   } catch (error: unknown) {
     console.error(

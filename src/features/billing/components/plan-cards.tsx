@@ -6,6 +6,7 @@ import { PLANS, type PaidPlanId, type PlanId } from "@/lib/plans"
 import { cn } from "@/lib/utils"
 
 import { useBillingPlans } from "../api/use-billing-plans"
+import { planActionFor } from "../lib/plan-action"
 
 interface PlanCardsProps {
   currentPlan: PlanId
@@ -13,6 +14,7 @@ interface PlanCardsProps {
   pendingPlan?: PaidPlanId | null
   managing?: boolean
   includeFree?: boolean
+  canManageSubscription?: boolean
   onChoose: (plan: PaidPlanId) => void
   onManage?: () => void
 }
@@ -23,6 +25,7 @@ export function PlanCards({
   pendingPlan,
   managing = false,
   includeFree = false,
+  canManageSubscription = true,
   onChoose,
   onManage,
 }: PlanCardsProps) {
@@ -51,39 +54,28 @@ export function PlanCards({
           plan.id === "FREE"
             ? `${plan.trialCredits} credits · ${plan.trialDays} days`
             : `${plan.monthlyCredits} credits / month`
+        const action = planActionFor({
+          planId: plan.id,
+          currentPlan,
+          isPaid,
+          purchasable: available,
+          canManageSubscription,
+        })
 
-        let action: React.ReactNode
+        let actionNode: React.ReactNode
 
-        if (isCurrent) {
-          action = (
+        if (action.kind === "current") {
+          actionNode = (
             <span className="flex h-10 items-center justify-center rounded-xl border border-border bg-secondary/60 text-xs font-bold text-foreground">
-              Current plan
+              {action.label}
             </span>
           )
-        } else if (isPaid) {
-          action = (
-            <button
-              type="button"
-              onClick={onManage}
-              disabled={!onManage || managing}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background text-xs font-bold text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {managing ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              Change in portal
-            </button>
-          )
-        } else if (plan.id === "FREE") {
-          action = (
-            <span className="flex h-10 items-center justify-center rounded-xl border border-border bg-secondary/40 text-xs font-bold text-muted-foreground">
-              Included
-            </span>
-          )
-        } else {
-          action = (
+        } else if (action.kind === "checkout") {
+          actionNode = (
             <button
               type="button"
               onClick={() => onChoose(plan.id as PaidPlanId)}
-              disabled={!available || busy}
+              disabled={action.disabled || busy}
               className={cn(
                 "flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60",
                 plan.highlighted
@@ -92,8 +84,30 @@ export function PlanCards({
               )}
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              {available ? `Choose ${plan.name}` : "Not available yet"}
+              {action.label}
             </button>
+          )
+        } else {
+          actionNode = (
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={onManage}
+                disabled={!onManage || managing || action.disabled}
+                title={action.hint ?? undefined}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background text-xs font-bold text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {managing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {action.label}
+              </button>
+              {action.hint ? (
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  {action.hint}
+                </p>
+              ) : null}
+            </div>
           )
         }
 
@@ -153,7 +167,7 @@ export function PlanCards({
               ))}
             </ul>
 
-            <div className="mt-5">{action}</div>
+            <div className="mt-5">{actionNode}</div>
           </div>
         )
       })}

@@ -52,6 +52,9 @@ export function BillingPage() {
     : null
   const plan = entitlements ? PLANS[entitlements.plan] : null
   const billingConfigured = plansResponse?.data.billingConfigured !== false
+  const canManageSubscription = Boolean(
+    userResponse?.data?.canManageSubscription
+  )
 
   const usedPercent = entitlements
     ? Math.min(
@@ -193,17 +196,29 @@ export function BillingPage() {
           </div>
 
           {entitlements.isPaid ? (
-            <button
-              type="button"
-              onClick={handleManage}
-              disabled={portal.isPending}
-              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-bold text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {portal.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : null}
-              Manage subscription
-            </button>
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleManage}
+                disabled={portal.isPending || !canManageSubscription}
+                title={
+                  canManageSubscription
+                    ? undefined
+                    : "This plan has no Stripe subscription to manage."
+                }
+                className="flex h-9 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-bold text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {portal.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                Manage subscription
+              </button>
+              {canManageSubscription ? null : (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  No Stripe subscription on this account.
+                </p>
+              )}
+            </div>
           ) : null}
         </div>
 
@@ -245,6 +260,7 @@ export function BillingPage() {
           pendingPlan={checkout.isPending ? (checkout.variables ?? null) : null}
           managing={portal.isPending}
           includeFree
+          canManageSubscription={canManageSubscription}
           onChoose={handleChoose}
           onManage={handleManage}
         />

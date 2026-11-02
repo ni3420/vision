@@ -147,6 +147,8 @@ Plans live in `src/lib/plans.ts` and must match two recurring monthly prices in 
 2. Add a webhook endpoint at `<app>/api/billing/webhook` (locally: `stripe listen --forward-to localhost:3000/api/billing/webhook`) and set `STRIPE_WEBHOOK_SECRET`.
 3. Checkout creates or reuses a Stripe customer and stores `stripeCustomerId`; paid users manage cards and cancellation through the Billing Portal at `/billing`.
 
+Plan buttons are plan-aware: a free user sees `Choose Basic/Pro` (Checkout), while an existing subscriber sees `Upgrade to Pro`, `Switch to Basic`, or `Downgrade to Free`, all routed through the Billing Portal so Stripe prorates and cancels the current subscription instead of creating a second one. `GET /api/auth/current` reports `canManageSubscription` (backed by a stored `stripeSubscriptionId`); a paid plan without one — for example a manually granted plan — disables those buttons and says why.
+
 The webhook handles `checkout.session.completed`, `customer.subscription.created|updated|deleted`, `invoice.paid`, and `invoice.payment_failed`. Event IDs are persisted in `stripe_events`, so a duplicate delivery is acknowledged without being applied twice; a failed handler removes the marker so Stripe's retry can run again.
 
 Free accounts get 5 credits for 7 days. Paid credits refill every 30 days and on `invoice.paid`. While a price or key is missing, checkout and portal return `503 BILLING_NOT_CONFIGURED` and the UI labels the paid plans `Not available yet` rather than failing silently.

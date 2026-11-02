@@ -20,6 +20,7 @@ import Plan from "@/components/plan"
 import { Skeleton } from "@/components/skeleton"
 import { useDashboardSummary } from "@/features/dashboard/api/use-get-dashboard-summary"
 import { buildDistribution } from "@/features/dashboard/lib/distribution"
+import { FREE_TRIAL_CREDITS, FREE_TRIAL_DAYS } from "@/lib/plans"
 
 const UsageChart = dynamic(
   () => import("./usage-chart").then((mod) => mod.UsageChart),
@@ -310,10 +311,11 @@ export const DashBoardPage = () => {
                     <span>Usage rules</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Free accounts get {snapshot.user.limit} trial credits across
-                    images, conversations, and background cutouts. Basic and Pro
-                    include a monthly credit allowance. Each request counts once,
-                    even when it returns two images.
+                    Free accounts get {FREE_TRIAL_CREDITS} trial credits across
+                    images, conversations, and background cutouts, valid for{" "}
+                    {FREE_TRIAL_DAYS} days. Basic and Pro include a monthly credit
+                    allowance. Each request counts once, even when it returns two
+                    images.
                   </p>
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <Activity className="h-3 w-3 text-primary" />

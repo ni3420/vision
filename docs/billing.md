@@ -32,6 +32,10 @@ One dedicated credit is charged per request (one image request, one chat reply, 
 
 Checkout and portal are rate limited (10/min/user). Checkout rejects an already-paid user with `409 ALREADY_SUBSCRIBED`; the portal rejects a user without a customer with `400 NO_BILLING_ACCOUNT`.
 
+`GET /api/auth/current` also returns `canManageSubscription`, which is true only when a real
+Stripe subscription id is stored. Plan changes for an existing subscriber never go through
+Checkout; they are made in the Billing Portal so Stripe handles proration and cancellation.
+
 ## Webhook behaviour
 
 Handled events:
@@ -51,6 +55,11 @@ Subscription events resolve the user from `metadata.userId` (set on the Checkout
 - `UpgradeDialog` is opened by the image and background forms on a `403` and by `TrialEndedDialog` when a FREE user is expired or out of credits.
 - The sidebar plan widget links to `/billing`.
 - If a Stripe price is missing, `PlanCards` shows `Not available yet` and the page explains which env vars are missing.
+- Plan buttons are plan-aware (`src/features/billing/lib/plan-action.ts`):
+  - current plan -> `Current plan`
+  - FREE user -> `Included` on Free, `Choose Basic/Pro` (Checkout) on paid plans
+  - subscriber -> `Downgrade to Free` on Free, `Upgrade to Pro` / `Switch to Basic` on the other paid plan; all go to the Billing Portal so no second subscription is created
+  - a paid plan without a stored Stripe subscription (for example a manually granted plan) disables the portal buttons and explains that plan changes need a subscription.
 
 ## Environment
 
