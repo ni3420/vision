@@ -1,5 +1,7 @@
 "use client"
 
+import { useSyncExternalStore } from "react"
+
 import { Monitor, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 
@@ -13,14 +15,23 @@ const OPTIONS = [
 
 type ThemeValue = (typeof OPTIONS)[number]["value"]
 
+const subscribe = () => () => {}
+const getClientSnapshot = () => true
+const getServerSnapshot = () => false
+
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
 
-  // next-themes resolves the stored theme after mount. Until then both the
-  // server and the first client render see `undefined`, so falling back to
-  // "system" keeps the markup identical.
+  // next-themes reads the stored theme from localStorage during the client's
+  // first render, while the server only has the default ("system"). Ignoring
+  // `theme` until hydration finishes keeps that render identical to SSR.
+  const hydrated = useSyncExternalStore(
+    subscribe,
+    getClientSnapshot,
+    getServerSnapshot
+  )
   const current: ThemeValue =
-    theme === "light" || theme === "dark" ? theme : "system"
+    hydrated && (theme === "light" || theme === "dark") ? theme : "system"
 
   return (
     <div
