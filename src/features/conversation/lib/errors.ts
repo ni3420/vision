@@ -35,10 +35,17 @@ export function describeChatError(input: ChatErrorInput): ChatErrorCopy {
   }
 
   if (status === 403) {
+    if (code === "TRIAL_EXPIRED") {
+      return {
+        title: "Free trial ended",
+        message: "Choose a plan to keep chatting.",
+        retryable: false,
+      };
+    }
     if (code === "QUOTA_EXCEEDED") {
       return {
-        title: "Free credits used up",
-        message: "Upgrade to Pro to keep chatting, or use the remaining free credits on images or background cutouts.",
+        title: "You're out of credits",
+        message: "Choose a plan to keep chatting with Vision.",
         retryable: false,
       };
     }

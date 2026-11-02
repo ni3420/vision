@@ -5,7 +5,7 @@ import { handle } from 'hono/vercel'
 import ImageRouter from "@/features/image/server/route"
 import BackgroundRouter from "@/features/background/server/route"
 import authRouter from "@/features/auth/server/route"
-import subscriptionRouter from "@/features/Subscription/server/route"
+import billingRouter from "@/features/billing/server/route"
 import { DB } from '@/db/db'
 import conversationRouter from "@/features/conversation/server/route"
 import assetsRouter from "@/features/assets/server/route"
@@ -31,7 +31,7 @@ const app = new Hono().basePath('/api')
 .route("/conversation",conversationRouter)
 .route("/dashboard", dashboardRouter)
 .route("/assets", assetsRouter)
-.route("/stripe",subscriptionRouter)
+.route("/billing", billingRouter)
 
 
 

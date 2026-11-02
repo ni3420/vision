@@ -9,7 +9,8 @@ import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
-import UpgradeModal from "@/features/Subscription/components/upgarde-model"
+import UpgradeDialog from "@/features/billing/components/upgrade-dialog"
+import { entitlementsFor } from "@/lib/entitlements"
 import { cn } from "@/lib/utils"
 
 import { imageGenerationSchema } from "../schema"
@@ -39,7 +40,9 @@ export const CreateImageForm = () => {
   const { mutate, variables, data, error, isPending, isError } = useCreateImage()
   const { data: userResponse } = useCurrentUser()
 
-  const isPro = userResponse?.data?.plan === "PRO"
+  const entitlements = userResponse?.data
+    ? entitlementsFor(userResponse.data)
+    : null
 
   const {
     control,
@@ -58,11 +61,11 @@ export const CreateImageForm = () => {
   const prompt = useWatch({ control, name: "prompt" })
   const dimensions = useWatch({ control, name: "dimensions" })
   const quantity = useWatch({ control, name: "quantity" })
-
   const variantCount = String(quantity) === "2" ? 2 : 1
-  const costLabel = isPro
-    ? "no credit used"
-    : `uses ${variantCount} free generation${variantCount > 1 ? "s" : ""}`
+
+  const costLabel = entitlements?.isPaid
+    ? "uses 1 credit"
+    : "uses 1 free credit"
 
   const handleMutationError = (err: ApiError) => {
     if (err?.status === 403) {
@@ -261,8 +264,8 @@ export const CreateImageForm = () => {
         />
       </div>
 
-      <UpgradeModal
-        isOpen={isUpgradeModalOpen}
+      <UpgradeDialog
+        open={isUpgradeModalOpen}
         onClose={() => setIsUpgradeModalOpen(false)}
       />
     </>

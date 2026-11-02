@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 interface FakeUser {
-  plan?: string;
+  plan: string;
   freeUsesCount: number;
+  credits?: number;
+  creditsResetAt?: Date | null;
+  trialEndsAt?: Date | null;
+  createdAt?: Date;
 }
 
 interface FakeLedger {
@@ -13,11 +17,76 @@ interface FakeLedger {
   idempotencyKey: string;
 }
 
+type Filter = Record<string, unknown>;
+
 const state = {
   users: new Map<string, FakeUser>(),
   ledgers: [] as FakeLedger[],
   duplicateNextKey: false,
 };
+
+function matches(user: FakeUser, query: Filter): boolean {
+  if (query.plan && user.plan !== query.plan) return false;
+
+  const freeFilter = query.freeUsesCount as
+    | { $lt?: number; $gt?: number }
+    | undefined;
+  if (freeFilter?.$lt !== undefined && !(user.freeUsesCount < freeFilter.$lt)) {
+    return false;
+  }
+  if (freeFilter?.$gt !== undefined && !(user.freeUsesCount > freeFilter.$gt)) {
+    return false;
+  }
+
+  const creditFilter = query.credits as { $gt?: number } | undefined;
+  if (creditFilter?.$gt !== undefined && !((user.credits ?? 0) > creditFilter.$gt)) {
+    return false;
+  }
+
+  const or = query.$or as Filter[] | undefined;
+  if (or) {
+    const matched = or.some((condition) => {
+      const resetFilter = condition.creditsResetAt as
+        | Date
+        | null
+        | { $lte: Date }
+        | undefined;
+      if (resetFilter === null) return !user.creditsResetAt;
+      if (resetFilter && resetFilter instanceof Date) {
+        return (
+          !!user.creditsResetAt &&
+          new Date(user.creditsResetAt).getTime() === resetFilter.getTime()
+        );
+      }
+      if (resetFilter && "$lte" in resetFilter) {
+        return (
+          !!user.creditsResetAt &&
+          new Date(user.creditsResetAt).getTime() <=
+            new Date(resetFilter.$lte).getTime()
+        );
+      }
+      return false;
+    });
+    if (!matched) return false;
+  }
+
+  return true;
+}
+
+function applyUpdate(user: FakeUser, update: Filter) {
+  const inc = update.$inc as Record<string, number> | undefined;
+  if (inc) {
+    for (const [key, value] of Object.entries(inc)) {
+      const target = user as unknown as Record<string, number>;
+      target[key] = (target[key] ?? 0) + value;
+    }
+  }
+
+  const set = update.$set as Record<string, unknown> | undefined;
+  if (set) {
+    Object.assign(user, set);
+  }
+}
 
 mock.module("@/models/user.models", () => ({
   User: {
@@ -29,22 +98,23 @@ mock.module("@/models/user.models", () => ({
         },
       }),
     }),
-    findOneAndUpdate: async (
-      query: { userId: string },
-      update: { $inc: { freeUsesCount: number } }
-    ) => {
-      const user = state.users.get(query.userId);
-      if (!user || user.plan === "PRO" || user.freeUsesCount >= 5) return null;
-      user.freeUsesCount += update.$inc.freeUsesCount;
+    findOneAndUpdate: async (query: Filter, update: Filter) => {
+      const user = state.users.get(String(query.userId));
+      if (!user || !matches(user, query)) return null;
+      applyUpdate(user, update);
       return { ...user };
     },
-    updateOne: async (
-      query: { userId: string },
-      update: { $inc: { freeUsesCount: number } }
-    ) => {
-      const user = state.users.get(query.userId);
-      if (!user || user.freeUsesCount <= 0) return { modifiedCount: 0 };
-      user.freeUsesCount += update.$inc.freeUsesCount;
+    updateOne: async (query: Filter, update: Filter) => {
+      const user = state.users.get(String(query.userId));
+      if (!user) return { modifiedCount: 0 };
+      if (
+        (query.freeUsesCount as { $gt?: number } | undefined)?.$gt !== undefined &&
+        user.freeUsesCount <= 0
+      ) {
+        return { modifiedCount: 0 };
+      }
+      if (!matches(user, query)) return { modifiedCount: 0 };
+      applyUpdate(user, update);
       return { modifiedCount: 1 };
     },
   },
@@ -93,7 +163,7 @@ const {
   DuplicateRequestError,
   QuotaExceededError,
   QuotaUserMissingError,
-  FREE_GENERATION_LIMIT,
+  TrialExpiredError,
   refundQuota,
   reserveQuota,
   settleQuota,
@@ -105,7 +175,7 @@ beforeEach(() => {
   state.duplicateNextKey = false;
 });
 
-describe("reserveQuota", () => {
+describe("reserveQuota · free trial", () => {
   it("charges a free user and records a ledger row", async () => {
     state.users.set("user-1", { plan: "FREE", freeUsesCount: 0 });
 
@@ -115,6 +185,7 @@ describe("reserveQuota", () => {
     });
 
     expect(state.users.get("user-1")?.freeUsesCount).toBe(1);
+    expect(reservation.counter).toBe("freeUsesCount");
     expect(reservation.ledgerId).toBeTruthy();
     expect(state.ledgers).toHaveLength(1);
   });
@@ -158,30 +229,81 @@ describe("reserveQuota", () => {
     expect(state.users.get("user-1")?.freeUsesCount).toBe(0);
   });
 
-  it("stops at the free limit and removes the orphan ledger row", async () => {
-    state.users.set("user-1", {
-      plan: "FREE",
-      freeUsesCount: FREE_GENERATION_LIMIT,
-    });
+  it("stops at the trial credit limit and removes the orphan ledger row", async () => {
+    state.users.set("user-1", { plan: "FREE", freeUsesCount: 5 });
 
     await expect(
       reserveQuota({ userId: "user-1", kind: "image" })
     ).rejects.toBeInstanceOf(QuotaExceededError);
 
-    expect(state.users.get("user-1")?.freeUsesCount).toBe(FREE_GENERATION_LIMIT);
+    expect(state.users.get("user-1")?.freeUsesCount).toBe(5);
     expect(state.ledgers).toHaveLength(0);
   });
 
-  it("does not charge PRO users and returns no ledger", async () => {
-    state.users.set("user-1", { plan: "PRO", freeUsesCount: 4 });
+  it("rejects generation after the trial window closes", async () => {
+    state.users.set("user-1", {
+      plan: "FREE",
+      freeUsesCount: 0,
+      trialEndsAt: new Date("2026-01-01T00:00:00.000Z"),
+      createdAt: new Date("2025-12-25T00:00:00.000Z"),
+    });
+
+    await expect(
+      reserveQuota({ userId: "user-1", kind: "image" })
+    ).rejects.toBeInstanceOf(TrialExpiredError);
+
+    expect(state.users.get("user-1")?.freeUsesCount).toBe(0);
+    expect(state.ledgers).toHaveLength(0);
+  });
+});
+
+describe("reserveQuota · paid plans", () => {
+  it("spends one monthly credit", async () => {
+    state.users.set("user-1", {
+      plan: "BASIC",
+      freeUsesCount: 5,
+      credits: 10,
+      creditsResetAt: new Date(Date.now() + 86_400_000),
+    });
 
     const reservation = await reserveQuota({
       userId: "user-1",
       kind: "image",
     });
 
-    expect(reservation.ledgerId).toBeNull();
-    expect(state.users.get("user-1")?.freeUsesCount).toBe(4);
+    expect(reservation.plan).toBe("BASIC");
+    expect(reservation.counter).toBe("credits");
+    expect(state.users.get("user-1")?.credits).toBe(9);
+    expect(state.users.get("user-1")?.freeUsesCount).toBe(5);
+    expect(state.ledgers).toHaveLength(1);
+  });
+
+  it("refills the allowance when the period has elapsed", async () => {
+    state.users.set("user-1", {
+      plan: "PRO",
+      freeUsesCount: 0,
+      credits: 0,
+      creditsResetAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    await reserveQuota({ userId: "user-1", kind: "conversation" });
+
+    expect(state.users.get("user-1")?.credits).toBe(499);
+    expect(state.users.get("user-1")?.creditsResetAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects when paid credits are exhausted", async () => {
+    state.users.set("user-1", {
+      plan: "PRO",
+      freeUsesCount: 0,
+      credits: 0,
+      creditsResetAt: new Date(Date.now() + 86_400_000),
+    });
+
+    await expect(
+      reserveQuota({ userId: "user-1", kind: "image" })
+    ).rejects.toBeInstanceOf(QuotaExceededError);
+
     expect(state.ledgers).toHaveLength(0);
   });
 
@@ -206,7 +328,7 @@ describe("settleQuota / refundQuota", () => {
     expect(state.users.get("user-1")?.freeUsesCount).toBe(1);
   });
 
-  it("refunds a failed request exactly once", async () => {
+  it("refunds a failed free request exactly once", async () => {
     state.users.set("user-1", { plan: "FREE", freeUsesCount: 0 });
     const reservation = await reserveQuota({
       userId: "user-1",
@@ -218,5 +340,23 @@ describe("settleQuota / refundQuota", () => {
 
     expect(state.ledgers[0].status).toBe("refunded");
     expect(state.users.get("user-1")?.freeUsesCount).toBe(0);
+  });
+
+  it("returns a paid credit when the request fails", async () => {
+    state.users.set("user-1", {
+      plan: "BASIC",
+      freeUsesCount: 0,
+      credits: 5,
+      creditsResetAt: new Date(Date.now() + 86_400_000),
+    });
+    const reservation = await reserveQuota({
+      userId: "user-1",
+      kind: "background",
+    });
+
+    await refundQuota(reservation);
+
+    expect(state.users.get("user-1")?.credits).toBe(5);
+    expect(state.ledgers[0].status).toBe("refunded");
   });
 });

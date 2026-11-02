@@ -11,6 +11,7 @@ import {
   MessagesSquare, 
   Eraser, 
   LayoutDashboard,
+  CreditCard,
   LogOut,
   Loader2
 } from "lucide-react";
@@ -47,6 +48,11 @@ const NAV_ITEMS: {
     label: "Background Studio",
     icon: Eraser,
     href: "/background-studio",
+  },
+  {
+    label: "Billing",
+    icon: CreditCard,
+    href: "/billing",
   },
 ];
 

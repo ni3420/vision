@@ -1,4 +1,5 @@
-import { FREE_GENERATION_LIMIT } from "@/server/quota"
+import { entitlementsFor, type EntitlementUser } from "@/lib/entitlements"
+import type { PlanId } from "@/lib/plans"
 
 export type UsageKey = "chat" | "image" | "background"
 
@@ -17,10 +18,16 @@ export interface FacetCounts {
 
 export interface DashboardSnapshot {
   user: {
-    plan: "FREE" | "PRO"
-    freeUsesCount: number
+    plan: PlanId
+    isPaid: boolean
     limit: number
-    remaining: number | null
+    remaining: number
+    used: number
+    trialEndsAt: string | null
+    trialDaysLeft: number | null
+    trialExpired: boolean
+    creditsResetAt: string | null
+    canGenerate: boolean
   }
   counts: {
     conversations: number
@@ -66,22 +73,26 @@ export function buildWeeklySeries(
 }
 
 export function buildSnapshot(input: {
-  plan?: string
-  freeUsesCount?: number
+  user: EntitlementUser
   images: FacetCounts
   backgrounds: FacetCounts
   conversations: FacetCounts
   now: Date
 }): DashboardSnapshot {
-  const isPro = input.plan === "PRO"
-  const used = Math.max(0, input.freeUsesCount ?? 0)
+  const entitlements = entitlementsFor(input.user, input.now)
 
   return {
     user: {
-      plan: isPro ? "PRO" : "FREE",
-      freeUsesCount: used,
-      limit: FREE_GENERATION_LIMIT,
-      remaining: isPro ? null : Math.max(0, FREE_GENERATION_LIMIT - used),
+      plan: entitlements.plan,
+      isPaid: entitlements.isPaid,
+      limit: entitlements.limit,
+      remaining: entitlements.remaining,
+      used: entitlements.used,
+      trialEndsAt: entitlements.trialEndsAt,
+      trialDaysLeft: entitlements.trialDaysLeft,
+      trialExpired: entitlements.trialExpired,
+      creditsResetAt: entitlements.creditsResetAt,
+      canGenerate: entitlements.canGenerate,
     },
     counts: {
       conversations: input.conversations.total,

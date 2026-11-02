@@ -9,7 +9,7 @@ describe("describeGenerationError", () => {
       message: "Free generation limit reached",
     });
 
-    expect(copy.title).toBe("Free generations used up");
+    expect(copy.title).toBe("You're out of credits");
     expect(copy.retryable).toBe(false);
   });
 

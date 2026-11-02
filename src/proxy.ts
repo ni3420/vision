@@ -2,7 +2,9 @@ import { clerkMiddleware,createRouteMatcher } from "@clerk/nextjs/server"
 
 // Define public routes that do not require authentication
 const isPublicRoute = createRouteMatcher([
-  "/auth(.*)","/api/stripe(.*)"
+  "/auth(.*)",
+  // Stripe cannot carry a Clerk session; the route verifies the signature.
+  "/api/billing/webhook",
 ])
 
 export default clerkMiddleware(async (auth, request) => {

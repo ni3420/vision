@@ -22,8 +22,9 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Conversation | Groq `openai/gpt-oss-120b` with Gemini `gemini-3.6-flash` fallback, 60 s timeout and 3 bounded retries; request/response (no streaming) |
 | Background removal | remove.bg `removebg-v1` (preview by default, full resolution uses credits), transparent PNG, original kept for comparison; a labelled local mock runs when no background key is present outside production |
 | Video generation | Not available — no provider is configured or integrated |
-| Free plan quota | 5 generations per account, enforced server-side |
-| Pro upgrade | Stripe Checkout; the webhook flips the plan to PRO |
+| Plans | Free (5 credits over a 7-day trial), Basic ($9/mo, 100 credits), Pro ($29/mo, 500 credits) |
+| Credits | One credit per image request, chat reply, or cutout; failed requests are refunded |
+| Upgrade flow | Stripe Checkout + Billing Portal; signed webhooks flip the plan and refill credits. A dialog prompts when the trial ends or credits run out |
 
 Each generation request consumes one quota unit (an image request for two images is still one unit). Without real provider keys the app runs in **mock mode** locally so every screen can be exercised end to end.
 
@@ -91,7 +92,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
 | Background provider | `REMOVE_BG_API_KEY` (default), `BACKGROUND_PROVIDER`, `PHOTOROOM_API_KEY` (fallback) | For live background removal |
 | Storage | `STORAGE_DRIVER` (`s3` \| `imagekit` \| `local`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Backblaze B2 (`s3`) in this repo's `.env.local`; `local` is dev-only |
-| Billing | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
+| Billing | `STRIPE_SECRET_KEY`, `STRIPE_BASIC_PRICE_ID`, `STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
 
 ### Mock mode
 
@@ -133,13 +134,24 @@ Then set `CLOUDFARE_URL` to that URL and `CLOUDFARE_API_KEY` to the same secret.
 
 The Worker accepts `POST /generate` with JSON `{ prompt, width?, height?, aspectRatio?, guidance?, seed? }` or a multipart form (optionally with an `image` field for image-to-image). It returns raw image bytes, exposes `GET /health`, and answers CORS preflight. It returns `503` until `IMAGE_API_TOKEN` is set, so a fresh deploy is never an open proxy. An already-deployed Worker with an `IMAGE_API_TOKEN` secret works unchanged — only the request format matters.
 
-### Stripe
+### Stripe billing
 
-1. Create a recurring price and set `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`.
-2. Forward events locally with `stripe listen --forward-to localhost:3000/api/stripe/webhook` and set `STRIPE_WEBHOOK_SECRET`.
-3. The webhook handles `checkout.session.completed`, `customer.subscription.created`, `invoice.paid`, and `customer.subscription.deleted`.
+Plans live in `src/lib/plans.ts` and must match two recurring monthly prices in Stripe:
 
-`/api/stripe/webhook` is the only API route outside Clerk protection; its signature is verified before any database write.
+| Plan | Price | Credits each month |
+| --- | --- | --- |
+| Basic | $9 | 100 |
+| Pro | $29 | 500 |
+
+1. Create both recurring prices and set `STRIPE_BASIC_PRICE_ID` and `STRIPE_PRO_PRICE_ID`.
+2. Add a webhook endpoint at `<app>/api/billing/webhook` (locally: `stripe listen --forward-to localhost:3000/api/billing/webhook`) and set `STRIPE_WEBHOOK_SECRET`.
+3. Checkout creates or reuses a Stripe customer and stores `stripeCustomerId`; paid users manage cards and cancellation through the Billing Portal at `/billing`.
+
+The webhook handles `checkout.session.completed`, `customer.subscription.created|updated|deleted`, `invoice.paid`, and `invoice.payment_failed`. Event IDs are persisted in `stripe_events`, so a duplicate delivery is acknowledged without being applied twice; a failed handler removes the marker so Stripe's retry can run again.
+
+Free accounts get 5 credits for 7 days. Paid credits refill every 30 days and on `invoice.paid`. While a price or key is missing, checkout and portal return `503 BILLING_NOT_CONFIGURED` and the UI labels the paid plans `Not available yet` rather than failing silently.
+
+`/api/billing/webhook` is the only API route outside Clerk protection; its Stripe signature is verified before any database write.
 
 ## Scripts
 
@@ -160,7 +172,7 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/auth` | Upsert the signed-in user and return the MongoDB record |
-| `GET` | `/api/auth/current` | Current user (plan, `freeUsesCount`) |
+| `GET` | `/api/auth/current` | Current user (plan, credits, trial dates) |
 | `POST` | `/api/image` | Generate 1–2 images (`prompt`, `dimensions`, `quantity`) |
 | `GET` | `/api/image/history` | 60 newest image assets |
 | `POST` | `/api/background` | Remove the background (`multipart/form-data`, field `image`; PNG/JPEG/WebP up to 10 MB) |
@@ -171,12 +183,14 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `GET` | `/api/conversation/:sessionId` | One conversation |
 | `PATCH` | `/api/conversation/:sessionId` | Rename a conversation (`title`, 1–80 chars) |
 | `DELETE` | `/api/conversation/:sessionId` | Delete a conversation |
-| `GET` | `/api/dashboard/summary` | Counts, 7-day activity series, plan and remaining free uses |
+| `GET` | `/api/dashboard/summary` | Counts, 7-day activity series, plan, credits, and trial state |
 | `GET` | `/api/assets/:key` | Owner-only local asset read |
-| `POST` | `/api/stripe` | Create a Checkout session |
-| `POST` | `/api/stripe/webhook` | Stripe events (public, signature-verified) |
+| `GET` | `/api/billing/plans` | Plan catalog plus which plans have a configured Stripe price |
+| `POST` | `/api/billing/checkout` | Create a Checkout session for `BASIC` or `PRO` |
+| `POST` | `/api/billing/portal` | Create a Billing Portal session for the stored customer |
+| `POST` | `/api/billing/webhook` | Stripe events (public, signature-verified, idempotent) |
 
-Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `RATE_LIMITED` (429), `PROVIDER_NOT_CONFIGURED` (503), `STORAGE_NOT_CONFIGURED` (503), `PROVIDER_CALL_FAILED` (502), and `STORAGE_WRITE_FAILED` (502). Provider and storage failures include `retryable`.
+Stable error codes include `TRIAL_EXPIRED` (403), `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `ALREADY_SUBSCRIBED` (409), `RATE_LIMITED` (429), `PROVIDER_NOT_CONFIGURED` (503), `STORAGE_NOT_CONFIGURED` (503), `BILLING_NOT_CONFIGURED` (503), `PROVIDER_CALL_FAILED` (502), and `STORAGE_WRITE_FAILED` (502). Provider and storage failures include `retryable`.
 
 ### Request limits
 
@@ -185,17 +199,18 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 - Quantity: 1–2 images per request.
 - Conversation messages: 4000 characters server-side; only the last 12 turns are sent to the model.
 - Background uploads: PNG, JPEG, or WebP; file signature must match the declared type; 10 MB maximum.
-- Rate limits per user, per route (fixed one-minute window): image 10, background 10, conversation message 30. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
+- Rate limits per user, per route (fixed one-minute window): image 10, background 10, conversation message 30, billing checkout/portal 10. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
 
 ## Data model
 
 | Collection | Holds |
 | --- | --- |
-| `users` | Clerk `userId`, email, name, plan, `freeUsesCount` |
+| `users` | Clerk `userId`, email, name, plan, trial end, credits, reset date, Stripe customer/subscription IDs |
 | `assets` | Image metadata: object key, MIME, bytes, dimensions, prompt, provider, model |
 | `backgrounds` | Source and cutout object keys, MIME, bytes, dimensions, provider, model, quality (`preview`/`full`), mock flag |
 | `usage_ledger` | Reservation records with a unique sparse idempotency key |
 | `rate_limits` | Per-user, per-route window counters; a TTL index expires them |
+| `stripe_events` | Processed Stripe event IDs for webhook idempotency |
 | `conversations` | Session metadata and message history |
 
 ## Known limitations
@@ -204,17 +219,17 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 - **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image and conversation schemas, chat/generation error copy, grouping and relative-time helpers, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
 - **Background removal** calls remove.bg v1.0 (Photoroom remains an explicit fallback via `BACKGROUND_PROVIDER`). A live preview call succeeded on 2026-11-02: a 512×512 JPEG produced a 500×500 RGBA PNG, 91.3% fully transparent, in ~4.3 s. Full-resolution output consumes remove.bg credits and has not been exercised. Without any background key outside production the route returns a visibly labelled local mock.
 - **UI verification** for the image-generator, conversation, and background-studio surfaces is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
-- **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
 - **Live chat** targets `openai/gpt-oss-120b` and `gemini-3.6-flash`, but those IDs are documentation-verified rather than exercised here: the local key is a placeholder, so no provider call was made. Chat is still request/response — no streaming, stop button, or token usage.
-- **Rate limiting** covers the three charged routes only; auth, creating an empty session, checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable. A session created with a first message is rate limited.
-- **Quota** is a lifetime free allowance of 5 units; it does not reset monthly. PRO has no usage cap in code.
+- **Rate limiting** covers generation, conversation messages, and billing actions; auth, creating an empty session, and history reads are unmetered. The limiter fails open if MongoDB is unreachable. A session created with a first message is rate limited.
+- **Billing is not live-verified.** `STRIPE_SECRET_KEY` is present but `STRIPE_BASIC_PRICE_ID`, `STRIPE_PRO_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` are empty in this environment, so checkout returns `503 BILLING_NOT_CONFIGURED` by design. The webhook path is covered by unit-style logic only; no live Stripe event has been processed here.
+- **Credit refill** is lazy: a paid allowance refills on the next quota check after 30 days, and `invoice.paid` can refill sooner. There is no scheduled job.
 - The free-quota path has not been exercised against a live MongoDB here; unit tests mock the models and the HTTP flow is statically verified only.
 - History endpoints return the newest 60 images / 30 cutouts; cursor pagination is not implemented.
 
 ## Roadmap
 
 1. Per-route metadata, Open Graph tags, and an OG image.
-2. Webhook event idempotency, rate limits on auth/session/checkout, and segment-level error boundaries.
+2. Rate limits on auth and session creation, and segment-level error boundaries.
 3. Browser E2E tests and CI, then an end-to-end demo dry run.
 4. Image editing (background removal, inpainting) behind verified providers.
 5. Video only after image workflows and unit economics are validated.

@@ -10,7 +10,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
-import { FREE_GENERATION_LIMIT } from "@/lib/plans"
+import { entitlementsFor } from "@/lib/entitlements"
+import { planDefinition } from "@/lib/plans"
 
 import { useCreateSession } from "../api/use-create-conversation"
 import { useDeleteConversation } from "../api/use-delete-conversation"
@@ -61,14 +62,16 @@ export function ConversationWorkspace() {
     }
   }, [])
 
-  const isPro = userResponse?.data?.plan === "PRO"
-  const remaining = Math.max(
-    0,
-    FREE_GENERATION_LIMIT - (userResponse?.data?.freeUsesCount ?? 0)
-  )
-  const creditsLabel = isPro
-    ? "Pro plan · no free-tier cap"
-    : `${remaining} of ${FREE_GENERATION_LIMIT} credits left`
+  const entitlements = userResponse?.data
+    ? entitlementsFor(userResponse.data)
+    : null
+  const creditsLabel = !entitlements
+    ? ""
+    : entitlements.trialExpired
+      ? "Trial ended · choose a plan"
+      : entitlements.isPaid
+        ? `${planDefinition(entitlements.plan).name} plan · ${entitlements.remaining} credits left`
+        : `${entitlements.remaining} of ${entitlements.limit} credits left`
 
   const selectSession = (sessionId: string) => {
     if (isSending || sessionId === activeSessionId) {

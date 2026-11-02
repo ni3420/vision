@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { LoginSchema } from "../schema";
 import { User } from "@/models/user.models";
+import { FREE_TRIAL_DAYS } from "@/lib/plans";
 import { getAuth } from "@clerk/hono";
+
+function trialEndFrom(now: Date) {
+  return new Date(now.getTime() + FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000);
+}
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -59,6 +64,8 @@ const app = new Hono()
         userId,
         plan: "FREE",
         freeUsesCount: 0,
+        credits: 0,
+        trialEndsAt: trialEndFrom(new Date()),
       });
 
       return c.json(

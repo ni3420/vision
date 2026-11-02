@@ -10,6 +10,7 @@ import {
   Clapperboard,
   MessagesSquare,
   Eraser,
+  CreditCard,
 } from "lucide-react"
 
 import {
@@ -52,6 +53,11 @@ const NAV_ITEMS: {
     label: "Background Studio",
     icon: Eraser,
     href: "/background-studio",
+  },
+  {
+    label: "Billing",
+    icon: CreditCard,
+    href: "/billing",
   },
 ]
 

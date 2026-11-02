@@ -46,8 +46,7 @@ export function createDashboardRouter(options: {
         {
           success: true,
           data: buildSnapshot({
-            plan: data.user.plan,
-            freeUsesCount: data.user.freeUsesCount,
+            user: data.user,
             images: data.images,
             backgrounds: data.backgrounds,
             conversations: data.conversations,

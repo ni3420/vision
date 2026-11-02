@@ -9,11 +9,18 @@ describe("describeChatError", () => {
     expect(copy.title).toMatch(/reach the server/i);
   });
 
-  it("maps quota exhaustion to an upgrade hint without a retry", () => {
+  it("maps quota exhaustion to a plan hint without a retry", () => {
     const copy = describeChatError({ status: 403, code: "QUOTA_EXCEEDED" });
 
     expect(copy.retryable).toBe(false);
-    expect(copy.message).toMatch(/upgrade/i);
+    expect(copy.message).toMatch(/plan/i);
+  });
+
+  it("maps an expired trial to a plan hint without a retry", () => {
+    const copy = describeChatError({ status: 403, code: "TRIAL_EXPIRED" });
+
+    expect(copy.retryable).toBe(false);
+    expect(copy.title).toMatch(/trial/i);
   });
 
   it("includes the wait time for rate limiting", () => {

@@ -15,7 +15,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/features/auth/api/use-current-user";
-import UpgradeModal from "@/features/Subscription/components/upgarde-model";
+import UpgradeDialog from "@/features/billing/components/upgrade-dialog";
+import { entitlementsFor } from "@/lib/entitlements";
 import type { BackgroundQuality } from "@/server/ai/types";
 import {
   BACKGROUND_MAX_BYTES,
@@ -55,7 +56,9 @@ export const BackgroundStudio = () => {
   const { mutate, variables, data, error, isPending, isError, reset } =
     useRemoveBackground();
   const { data: userResponse } = useCurrentUser();
-  const isPro = userResponse?.data?.plan === "PRO";
+  const entitlements = userResponse?.data
+    ? entitlementsFor(userResponse.data)
+    : null;
 
   useEffect(() => {
     return () => {
@@ -270,7 +273,7 @@ export const BackgroundStudio = () => {
             <Eraser className="size-4" />
             {isPending ? "Removing background…" : "Remove background"}
             <span className="text-[11px] font-medium text-primary-foreground/80">
-              · {isPro ? "no credit used" : "1 free generation"}
+              · {entitlements?.isPaid ? "1 credit" : "1 free credit"}
             </span>
           </Button>
           <p className="text-center text-[10px] text-muted-foreground">
@@ -392,8 +395,8 @@ export const BackgroundStudio = () => {
         </section>
       </div>
 
-      <UpgradeModal
-        isOpen={isUpgradeModalOpen}
+      <UpgradeDialog
+        open={isUpgradeModalOpen}
         onClose={() => setIsUpgradeModalOpen(false)}
       />
     </>

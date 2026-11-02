@@ -10,7 +10,14 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const SERIES_DAYS = 7
 
 export interface DashboardData {
-  user: { plan?: string; freeUsesCount?: number } | null
+  user: {
+    plan?: string
+    freeUsesCount?: number
+    credits?: number
+    creditsResetAt?: Date | null
+    trialEndsAt?: Date | null
+    createdAt?: Date
+  } | null
   images: FacetCounts
   backgrounds: FacetCounts
   conversations: FacetCounts
@@ -69,8 +76,15 @@ export async function loadDashboardData(
 
   const [user, images, backgrounds, conversations] = await Promise.all([
     User.findOne({ userId })
-      .select("plan freeUsesCount")
-      .lean<{ plan?: string; freeUsesCount?: number } | null>(),
+      .select("plan freeUsesCount credits creditsResetAt trialEndsAt createdAt")
+      .lean<{
+        plan?: string
+        freeUsesCount?: number
+        credits?: number
+        creditsResetAt?: Date | null
+        trialEndsAt?: Date | null
+        createdAt?: Date
+      } | null>(),
     loadFacet(Asset, { userId, kind: "image" }, since),
     loadFacet(Background, { userId }, since),
     loadFacet(Conversation, { userId }, since),

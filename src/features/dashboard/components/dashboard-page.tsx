@@ -239,23 +239,23 @@ export const DashBoardPage = () => {
                   <div
                     className={`h-10 w-10 rounded-2xl flex items-center justify-center border ${STAT_TONES.amber}`}
                   >
-                    {snapshot.user.plan === "PRO" ? (
+                    {snapshot.user.isPaid ? (
                       <Crown className="h-5 w-5" />
                     ) : (
                       <Zap className="h-5 w-5" />
                     )}
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-full border border-border/60">
-                    {snapshot.user.plan === "PRO" ? "PRO" : "FREE"}
+                    {snapshot.user.plan}
                   </span>
                 </div>
                 <div className="mt-4">
                   <p className="text-[11px] text-muted-foreground font-medium">
-                    Generations left
+                    Credits left
                   </p>
                   <h3 className="text-2xl font-black text-foreground mt-0.5">
-                    {snapshot.user.remaining === null
-                      ? "No cap"
+                    {snapshot.user.trialExpired
+                      ? "Trial ended"
                       : `${snapshot.user.remaining} / ${snapshot.user.limit}`}
                   </h3>
                 </div>
@@ -302,7 +302,7 @@ export const DashBoardPage = () => {
               </div>
 
               <div className="lg:col-span-4 space-y-6">
-                <Plan user={snapshot.user} />
+                <Plan />
 
                 <div className="bg-card border border-border/60 rounded-3xl p-5 shadow-sm space-y-3">
                   <div className="flex items-center gap-2 text-xs font-bold text-foreground">
@@ -310,9 +310,10 @@ export const DashBoardPage = () => {
                     <span>Usage rules</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Free accounts get {snapshot.user.limit} generations across images,
-                    conversations, and background cutouts. Pro removes the limit. Each
-                    request counts once, even when it returns two images.
+                    Free accounts get {snapshot.user.limit} trial credits across
+                    images, conversations, and background cutouts. Basic and Pro
+                    include a monthly credit allowance. Each request counts once,
+                    even when it returns two images.
                   </p>
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <Activity className="h-3 w-3 text-primary" />

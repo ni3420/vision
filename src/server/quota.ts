@@ -1,18 +1,29 @@
 import { randomUUID } from "node:crypto";
+
+import { entitlementsFor } from "@/lib/entitlements";
+import { monthlyCreditsFor, normalizePlan, type PlanId } from "@/lib/plans";
 import { User } from "@/models/user.models";
 import { UsageLedger, type UsageKind } from "@/models/usage-ledger.models";
-import { FREE_GENERATION_LIMIT } from "@/lib/plans";
-
-export { FREE_GENERATION_LIMIT };
 
 export type QuotaKind = UsageKind;
+
+const CREDIT_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class QuotaExceededError extends Error {
   readonly code = "QUOTA_EXCEEDED";
 
   constructor() {
-    super("Free generation limit reached");
+    super("Credit balance is empty");
     this.name = "QuotaExceededError";
+  }
+}
+
+export class TrialExpiredError extends Error {
+  readonly code = "TRIAL_EXPIRED";
+
+  constructor() {
+    super("Free trial has ended");
+    this.name = "TrialExpiredError";
   }
 }
 
@@ -34,11 +45,14 @@ export class DuplicateRequestError extends Error {
   }
 }
 
+type ChargedCounter = "freeUsesCount" | "credits" | "none";
+
 export interface QuotaReservation {
   userId: string;
   kind: QuotaKind;
-  plan: "FREE" | "PRO";
+  plan: PlanId;
   ledgerId: string | null;
+  counter: ChargedCounter;
 }
 
 export interface ReserveQuotaOptions {
@@ -48,23 +62,34 @@ export interface ReserveQuotaOptions {
   reason?: string;
 }
 
-export async function reserveQuota(
-  options: ReserveQuotaOptions
-): Promise<QuotaReservation> {
-  const user = await User.findOne({ userId: options.userId })
-    .select("plan freeUsesCount")
-    .lean<{ plan?: string; freeUsesCount?: number } | null>();
+export function nextCreditsResetAt(now: Date = new Date()): Date {
+  return new Date(now.getTime() + CREDIT_PERIOD_MS);
+}
 
-  if (!user) throw new QuotaUserMissingError();
+/**
+ * Paid allowances refill lazily on the first request after the period ends,
+ * so a missed invoice webhook cannot lock a paying customer out.
+ */
+export async function refillPaidCreditsIfDue(
+  userId: string,
+  plan: PlanId,
+  now: Date = new Date()
+) {
+  if (plan === "FREE") return;
+  const allowance = monthlyCreditsFor(plan);
+  if (allowance === null) return;
 
-  const plan = user.plan === "PRO" ? "PRO" : "FREE";
-  if (plan === "PRO") {
-    return { userId: options.userId, kind: options.kind, plan, ledgerId: null };
-  }
+  await User.updateOne(
+    {
+      userId,
+      plan,
+      $or: [{ creditsResetAt: { $lte: now } }, { creditsResetAt: null }],
+    },
+    { $set: { credits: allowance, creditsResetAt: nextCreditsResetAt(now) } }
+  );
+}
 
-  // Every charge gets a ledger row so refunds and audits work even when the
-  // caller does not supply an Idempotency-Key.
-  let ledgerId: string;
+async function reserveLedger(options: ReserveQuotaOptions): Promise<string> {
   try {
     const ledger = await UsageLedger.create({
       userId: options.userId,
@@ -74,21 +99,70 @@ export async function reserveQuota(
         options.idempotencyKey?.trim() || `auto:${randomUUID()}`,
       reason: options.reason,
     });
-    ledgerId = String(ledger._id);
+    return String(ledger._id);
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
       throw new DuplicateRequestError();
     }
     throw error;
   }
+}
 
-  const charged = await User.findOneAndUpdate(
-    {
+export async function reserveQuota(
+  options: ReserveQuotaOptions
+): Promise<QuotaReservation> {
+  const user = await User.findOne({ userId: options.userId })
+    .select(
+      "plan freeUsesCount credits creditsResetAt trialEndsAt createdAt"
+    )
+    .lean<{
+      plan?: string;
+      freeUsesCount?: number;
+      credits?: number;
+      creditsResetAt?: Date | null;
+      trialEndsAt?: Date | null;
+      createdAt?: Date;
+    } | null>();
+
+  if (!user) throw new QuotaUserMissingError();
+
+  const plan = normalizePlan(user.plan);
+
+  if (plan === "FREE") {
+    const entitlements = entitlementsFor(user);
+    if (entitlements.trialExpired) throw new TrialExpiredError();
+
+    const ledgerId = await reserveLedger(options);
+    const charged = await User.findOneAndUpdate(
+      {
+        userId: options.userId,
+        plan: "FREE",
+        freeUsesCount: { $lt: entitlements.limit },
+      },
+      { $inc: { freeUsesCount: 1 } },
+      { new: true }
+    );
+
+    if (!charged) {
+      await UsageLedger.deleteOne({ _id: ledgerId });
+      throw new QuotaExceededError();
+    }
+
+    return {
       userId: options.userId,
-      plan: { $ne: "PRO" },
-      freeUsesCount: { $lt: FREE_GENERATION_LIMIT },
-    },
-    { $inc: { freeUsesCount: 1 } },
+      kind: options.kind,
+      plan,
+      ledgerId,
+      counter: "freeUsesCount",
+    };
+  }
+
+  await refillPaidCreditsIfDue(options.userId, plan);
+
+  const ledgerId = await reserveLedger(options);
+  const charged = await User.findOneAndUpdate(
+    { userId: options.userId, plan, credits: { $gt: 0 } },
+    { $inc: { credits: -1 } },
     { new: true }
   );
 
@@ -97,7 +171,13 @@ export async function reserveQuota(
     throw new QuotaExceededError();
   }
 
-  return { userId: options.userId, kind: options.kind, plan, ledgerId };
+  return {
+    userId: options.userId,
+    kind: options.kind,
+    plan,
+    ledgerId,
+    counter: "credits",
+  };
 }
 
 export async function settleQuota(reservation: QuotaReservation) {
@@ -119,10 +199,20 @@ export async function refundQuota(reservation: QuotaReservation) {
 
   if (!released) return;
 
-  await User.updateOne(
-    { userId: reservation.userId, freeUsesCount: { $gt: 0 } },
-    { $inc: { freeUsesCount: -1 } }
-  );
+  if (reservation.counter === "freeUsesCount") {
+    await User.updateOne(
+      { userId: reservation.userId, freeUsesCount: { $gt: 0 } },
+      { $inc: { freeUsesCount: -1 } }
+    );
+    return;
+  }
+
+  if (reservation.counter === "credits") {
+    await User.updateOne(
+      { userId: reservation.userId },
+      { $inc: { credits: 1 } }
+    );
+  }
 }
 
 export async function runWithQuota<T>(

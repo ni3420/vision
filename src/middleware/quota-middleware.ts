@@ -5,6 +5,7 @@ import {
   DuplicateRequestError,
   QuotaExceededError,
   QuotaUserMissingError,
+  TrialExpiredError,
   refundQuota,
   reserveQuota,
   settleQuota,
@@ -18,7 +19,18 @@ export function quotaErrorResponse(c: Context, error: unknown) {
         success: false,
         code: "QUOTA_EXCEEDED",
         error:
-          "Free generation limit reached. Upgrade to Pro to remove the free-tier cap.",
+          "You have no credits left. Choose a plan to keep generating.",
+      },
+      403
+    );
+  }
+
+  if (error instanceof TrialExpiredError) {
+    return c.json(
+      {
+        success: false,
+        code: "TRIAL_EXPIRED",
+        error: "Your free trial has ended. Choose a plan to keep generating.",
       },
       403
     );

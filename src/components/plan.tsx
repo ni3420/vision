@@ -1,148 +1,109 @@
 "use client"
 
-import React from "react"
-import { Gauge, Zap, ShieldCheck, Crown, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { Crown, Gauge, Loader2, ShieldCheck, Sparkles } from "lucide-react"
+
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
-import { useCreateCheckout } from "@/features/Subscription/api/use-create-subscription"
+import { entitlementsFor } from "@/lib/entitlements"
+import { PLANS } from "@/lib/plans"
+import { cn } from "@/lib/utils"
 
-interface PlanUser {
-  plan?: string
-  freeUsesCount?: number
-}
+export const Plan = () => {
+  const { data, isPending, isError } = useCurrentUser()
+  const entitlements = data?.data ? entitlementsFor(data.data) : null
 
-interface PlanProps {
-  onUpgradeClick?: () => void
-  user?: PlanUser
-}
-
-export const Plan = ({ onUpgradeClick, user: providedUser }: PlanProps) => {
-  const { data: userResponse, isPending: isUserPending, isError } = useCurrentUser({
-    enabled: !providedUser,
-  })
-  const { mutate: handleCheckout, isPending: isCheckoutPending } = useCreateCheckout()
-
-  const user = providedUser ?? userResponse?.data
-  const isPremium = user?.plan === "PRO"
-  const maxCount = 5
-  const currentCount = user?.freeUsesCount ?? 0
-  const percentage = Math.min((currentCount / maxCount) * 100, 100)
-  const isLimitReached = currentCount >= maxCount
-
-  const handleUpgrade = () => {
-    if (onUpgradeClick) {
-      onUpgradeClick()
-    } else {
-      handleCheckout({ json: {} })
-    }
-  }
-
-  if (isUserPending && !providedUser) {
+  if (isPending) {
     return (
-      <div className="w-full bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl p-4 flex items-center justify-center min-h-[140px]">
-        <Loader2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400 animate-spin" />
+      <div className="flex min-h-[132px] w-full items-center justify-center rounded-2xl border border-border/60 bg-secondary/30 p-4">
+        <Loader2 className="size-4 animate-spin text-indigo-600 dark:text-indigo-400" />
       </div>
     )
   }
 
-  if (!providedUser && (isError || !userResponse?.success)) {
+  if (isError || !entitlements) {
     return (
-      <div className="w-full bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30 rounded-2xl p-4 text-center">
-        <span className="text-xs text-red-600 dark:text-red-400 font-medium">
+      <div className="w-full rounded-2xl border border-destructive/30 bg-destructive/5 p-3 text-center">
+        <span className="text-[11px] font-medium text-destructive">
           Failed to load plan details
         </span>
       </div>
     )
   }
 
-  if (isPremium) {
-    return (
-      <div className="w-full bg-gradient-to-br from-indigo-50/80 via-white to-indigo-50/30 dark:from-indigo-950/30 dark:via-[#0d0c16] dark:to-transparent border border-indigo-100 dark:border-indigo-500/20 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-indigo-600 text-white shrink-0">
-            <Crown className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
-              Pro Plan Active
-            </p>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-              No free-tier cap
-            </p>
-          </div>
-        </div>
-
-        {/* <button
-          type="button"
-          onClick={handleUpgrade}
-          disabled={isCheckoutPending}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-        >
-          {isCheckoutPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Zap className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-          )}
-          <span>{isCheckoutPending ? "Redirecting..." : "Manage Subscription"}</span>
-        </button> */}
-      </div>
-    )
-  }
+  const plan = PLANS[entitlements.plan]
+  const percentage = Math.min(
+    100,
+    Math.round((entitlements.used / Math.max(1, entitlements.limit)) * 100)
+  )
+  const exhausted = !entitlements.canGenerate
 
   return (
-    <div className="w-full bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
+    <div
+      className={cn(
+        "w-full space-y-3 rounded-2xl border p-4",
+        entitlements.isPaid
+          ? "border-indigo-500/25 bg-gradient-to-br from-indigo-50/80 via-white to-indigo-50/30 dark:from-indigo-950/30 dark:via-[#0d0c16] dark:to-transparent"
+          : "border-border/60 bg-secondary/30"
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Gauge className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-            Free Plan
+          {entitlements.isPaid ? (
+            <Crown className="size-4 text-indigo-600 dark:text-indigo-400" />
+          ) : (
+            <Gauge className="size-4 text-indigo-600 dark:text-indigo-400" />
+          )}
+          <span className="text-xs font-bold text-foreground">
+            {plan.name} plan
           </span>
         </div>
         <span
-          className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-            isLimitReached
-              ? "bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400"
-              : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
-          }`}
+          className={cn(
+            "rounded-md px-2 py-0.5 text-[10px] font-bold",
+            exhausted
+              ? "bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
+              : "bg-secondary text-muted-foreground"
+          )}
         >
-          {currentCount} / {maxCount} used
+          {entitlements.isPaid
+            ? `${entitlements.remaining} credits`
+            : entitlements.trialExpired
+              ? "Trial ended"
+              : `${entitlements.trialDaysLeft ?? 0}d left`}
         </span>
       </div>
 
       <div className="space-y-1.5">
-        <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
           <div
-            className={`h-full rounded-full transition-all duration-300 ${
-              isLimitReached
-                ? "bg-red-500"
+            className={cn(
+              "h-full rounded-full transition-all duration-300",
+              exhausted
+                ? "bg-rose-500"
                 : "bg-gradient-to-r from-indigo-500 to-violet-500"
-            }`}
+            )}
             style={{ width: `${percentage}%` }}
           />
         </div>
-        <div className="flex justify-between items-center text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-          <span>{Math.max(0, maxCount - currentCount)} free generations remaining</span>
-          {isLimitReached && (
-            <span className="text-red-500 font-semibold">Limit Reached</span>
-          )}
-        </div>
+        <p className="text-[10px] font-medium text-muted-foreground">
+          {entitlements.isPaid
+            ? `${entitlements.used} of ${entitlements.limit} credits used this cycle`
+            : entitlements.trialExpired
+              ? "Choose a plan to keep generating"
+              : `${entitlements.remaining} of ${entitlements.limit} free credits left`}
+        </p>
       </div>
 
-      <button
-        type="button"
-        onClick={handleUpgrade}
-        disabled={isCheckoutPending}
-        className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm shadow-indigo-500/20 cursor-pointer disabled:opacity-50"
+      <Link
+        href="/billing"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white shadow-sm shadow-indigo-500/20 transition-colors hover:bg-indigo-700"
       >
-        {isCheckoutPending ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Zap className="h-3.5 w-3.5 fill-current" />
-        )}
-        <span>{isCheckoutPending ? "Redirecting..." : "Upgrade to Pro"}</span>
-      </button>
+        <Sparkles className="size-3.5" />
+        {entitlements.isPaid ? "Manage plan" : "Upgrade plan"}
+      </Link>
 
-      <div className="flex items-center justify-center gap-1 pt-1 text-[10px] text-slate-400">
-        <ShieldCheck className="h-3 w-3 text-emerald-500" />
+      <div className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground">
+        <ShieldCheck className="size-3 text-emerald-500" />
         <span>Secured with Stripe</span>
       </div>
     </div>

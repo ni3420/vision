@@ -33,10 +33,17 @@ export function describeBackgroundError(
         code,
         retryable: true,
       };
+    case "TRIAL_EXPIRED":
+      return {
+        title: "Free trial ended",
+        message: "Your free trial has ended. Choose a plan to keep cutting out images.",
+        code,
+        retryable: false,
+      };
     case "QUOTA_EXCEEDED":
       return {
-        title: "Free generations used up",
-        message: "You have used all 5 free generations. Upgrade to Pro to keep cutting out images.",
+        title: "You're out of credits",
+        message: "Your plan has no credits left. Choose a plan to keep cutting out images.",
         code,
         retryable: false,
       };
@@ -121,8 +128,10 @@ export function describeBackgroundError(
 
   if (status === 403) {
     return {
-      title: "Free generations used up",
-      message: "You have used all 5 free generations. Upgrade to Pro to keep cutting out images.",
+      title: "Upgrade required",
+      message:
+        serverMessage ||
+        "You need credits to keep cutting out images. Choose a plan to continue.",
       code,
       retryable: false,
     };

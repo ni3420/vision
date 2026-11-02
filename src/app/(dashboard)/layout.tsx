@@ -1,6 +1,7 @@
 import NavBar from "@/features/dashboard/components/navbar";
 import SideBar from "@/features/dashboard/components/sidebar";
 import UserSync from "@/features/auth/components/user-sync";
+import TrialEndedDialog from "@/features/billing/components/trial-ended-dialog";
 
 export default function DashboardLayout({
   children,
@@ -10,6 +11,7 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       <UserSync />
+      <TrialEndedDialog />
       <SideBar />
       <div className="flex flex-col flex-1 min-w-0 h-full relative">
         <NavBar />

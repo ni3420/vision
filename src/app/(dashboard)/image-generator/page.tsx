@@ -6,7 +6,8 @@ import { History, Sliders } from "lucide-react"
 import CreateImageForm from "@/features/image/components/create-image-form"
 import ImageHistory from "@/features/image/components/image-history"
 import { useCurrentUser } from "@/features/auth/api/use-current-user"
-import { FREE_GENERATION_LIMIT } from "@/lib/plans"
+import { entitlementsFor } from "@/lib/entitlements"
+import { planDefinition } from "@/lib/plans"
 import { cn } from "@/lib/utils"
 
 const TABS = [
@@ -19,8 +20,14 @@ const Page = () => {
   const { data } = useCurrentUser()
 
   const user = data?.data
-  const isPro = user?.plan === "PRO"
-  const remaining = Math.max(0, FREE_GENERATION_LIMIT - (user?.freeUsesCount ?? 0))
+  const entitlements = user ? entitlementsFor(user) : null
+  const badge = !entitlements
+    ? ""
+    : entitlements.trialExpired
+      ? "Trial ended · choose a plan"
+      : entitlements.isPaid
+        ? `${planDefinition(entitlements.plan).name} · ${entitlements.remaining} credits left`
+        : `${entitlements.remaining} of ${entitlements.limit} free credits left`
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5">
@@ -36,7 +43,7 @@ const Page = () => {
 
         {user ? (
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-semibold text-primary">
-            {isPro ? "Pro · no free-tier cap" : `${remaining} of ${FREE_GENERATION_LIMIT} free left`}
+            {badge}
           </span>
         ) : null}
       </header>
