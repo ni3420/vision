@@ -5,19 +5,28 @@ import type Stripe from "stripe"
 import { z } from "zod"
 
 import { PLANS, isPaidPlan } from "@/lib/plans"
-import { appUrl, BillingNotConfiguredError, getStripe } from "@/lib/stripe"
+import {
+  BillingNotConfiguredError,
+  getStripe,
+  requestAppUrl,
+} from "@/lib/stripe"
 import { rateLimitGuard } from "@/middleware/rate-limit-middleware"
 import { User } from "@/models/user.models"
 
 import { billingReady, planPriceId } from "./config"
 import {
   applyStripeEvent,
+  applySubscriptionChange,
   forgetEvent,
   markEventProcessed,
 } from "./webhook"
 
 const checkoutSchema = z.object({
   plan: z.enum(["BASIC", "PRO"]),
+})
+
+const portalSchema = z.object({
+  flow: z.enum(["manage", "cancel"]).default("manage"),
 })
 
 function errorMessage(error: unknown, fallback: string) {
@@ -79,12 +88,12 @@ const app = new Hono()
         )
       }
 
-      if (isPaidPlan(user.plan)) {
+      if (isPaidPlan(user.plan) && user.stripeSubscriptionId) {
         return c.json(
           {
             success: false,
             code: "ALREADY_SUBSCRIBED",
-            error: "You already have a paid plan. Manage it from the billing portal.",
+            error: "You already have a paid plan. Change it from the billing page.",
           },
           409
         )
@@ -106,6 +115,8 @@ const app = new Hono()
         )
       }
 
+      const appOrigin = requestAppUrl(c.req.raw)
+
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         customer: customerId,
@@ -113,8 +124,9 @@ const app = new Hono()
         client_reference_id: userId,
         metadata: { userId, plan },
         subscription_data: { metadata: { userId, plan } },
-        success_url: `${appUrl()}/billing?checkout=success`,
-        cancel_url: `${appUrl()}/billing?checkout=cancelled`,
+        success_url: `${appOrigin}/billing?checkout=success`,
+        cancel_url: `${appOrigin}/billing?checkout=cancelled`,
+        return_url:`${appOrigin}`
       })
 
       if (!session.url) {
@@ -152,7 +164,7 @@ const app = new Hono()
       )
     }
   })
-  .post("/portal", rateLimitGuard("billing"), async (c) => {
+  .post("/change-plan", rateLimitGuard("billing"), zValidator("json", checkoutSchema), async (c) => {
     const userId = getAuth(c)?.userId
     if (!userId) {
       return c.json(
@@ -161,10 +173,142 @@ const app = new Hono()
       )
     }
 
+    const plan = c.req.valid("json").plan
+    const priceId = planPriceId(plan)
+    if (!priceId) {
+      return c.json(
+        {
+          success: false,
+          code: "BILLING_NOT_CONFIGURED",
+          error: "Subscriptions are not available yet. A Stripe price is missing.",
+        },
+        503
+      )
+    }
+
     try {
       const user = await User.findOne({ userId })
-        .select("stripeCustomerId")
-        .lean<{ stripeCustomerId?: string | null } | null>()
+        .select("plan stripeSubscriptionId")
+        .lean<{
+          plan?: string
+          stripeSubscriptionId?: string | null
+        } | null>()
+
+      if (!user) {
+        return c.json(
+          {
+            success: false,
+            code: "USER_NOT_INITIALIZED",
+            error: "User profile is not initialized yet",
+          },
+          404
+        )
+      }
+
+      if (!user.stripeSubscriptionId) {
+        return c.json(
+          {
+            success: false,
+            code: "NO_SUBSCRIPTION",
+            error: "This account has no Stripe subscription to change.",
+          },
+          409
+        )
+      }
+
+      if (user.plan === plan) {
+        return c.json(
+          {
+            success: false,
+            code: "ALREADY_ON_PLAN",
+            error: "You are already on this plan.",
+          },
+          409
+        )
+      }
+
+      const stripe = getStripe()
+      const subscription = await stripe.subscriptions.retrieve(
+        user.stripeSubscriptionId
+      )
+
+      if (
+        subscription.status !== "active" &&
+        subscription.status !== "trialing"
+      ) {
+        return c.json(
+          {
+            success: false,
+            code: "SUBSCRIPTION_INACTIVE",
+            error: "The subscription is not active. Open the billing portal to fix it.",
+          },
+          409
+        )
+      }
+
+      if (subscription.items.data.length !== 1) {
+        return c.json(
+          {
+            success: false,
+            code: "UNSUPPORTED_SUBSCRIPTION",
+            error: "This subscription has multiple prices. Manage it in the billing portal.",
+          },
+          409
+        )
+      }
+
+      const updated = await stripe.subscriptions.update(subscription.id, {
+        items: [{ id: subscription.items.data[0].id, price: priceId }],
+        proration_behavior: "create_prorations",
+        metadata: { ...subscription.metadata, userId, plan },
+      })
+
+      // The webhook repeats this, but syncing now keeps the UI accurate when
+      // event delivery is delayed.
+      await applySubscriptionChange(updated)
+
+      return c.json({ success: true, data: { plan } }, 200)
+    } catch (error) {
+      if (error instanceof BillingNotConfiguredError) {
+        return c.json(
+          {
+            success: false,
+            code: "BILLING_NOT_CONFIGURED",
+            error: "Subscriptions are not configured on this server.",
+          },
+          503
+        )
+      }
+
+      console.error("Stripe plan change failed:", errorMessage(error, "unknown error"))
+      return c.json(
+        {
+          success: false,
+          code: "PLAN_CHANGE_FAILED",
+          error: "Could not change your plan. Try again in a moment.",
+        },
+        502
+      )
+    }
+  })
+  .post("/portal", rateLimitGuard("billing"), zValidator("json", portalSchema), async (c) => {
+    const userId = getAuth(c)?.userId
+    if (!userId) {
+      return c.json(
+        { success: false, code: "UNAUTHORIZED", error: "Unauthorized access vector" },
+        401
+      )
+    }
+
+    const flow = c.req.valid("json").flow
+
+    try {
+      const user = await User.findOne({ userId })
+        .select("stripeCustomerId stripeSubscriptionId")
+        .lean<{
+          stripeCustomerId?: string | null
+          stripeSubscriptionId?: string | null
+        } | null>()
 
       if (!user?.stripeCustomerId) {
         return c.json(
@@ -177,9 +321,53 @@ const app = new Hono()
         )
       }
 
-      const session = await getStripe().billingPortal.sessions.create({
+      const stripe = getStripe()
+      const returnUrl = `${requestAppUrl(c.req.raw)}/`
+
+      if (flow === "cancel" && user.stripeSubscriptionId) {
+        const subscription = await stripe.subscriptions.retrieve(
+          user.stripeSubscriptionId
+        )
+        const cancellable =
+          subscription.status === "active" ||
+          subscription.status === "trialing"
+        const alreadyScheduled =
+          subscription.cancel_at !== null ||
+          subscription.cancellation_details?.reason === "cancellation_requested"
+
+        if (cancellable && !alreadyScheduled) {
+          try {
+            // The generic portal only returns when the customer clicks its
+            // return link. A cancellation deep link with after_completion
+            // redirects automatically once the cancellation is confirmed.
+            const session = await stripe.billingPortal.sessions.create({
+              customer: user.stripeCustomerId,
+              return_url: returnUrl,
+              flow_data: {
+                type: "subscription_cancel",
+                subscription_cancel: { subscription: subscription.id },
+                after_completion: {
+                  type: "redirect",
+                  redirect: { return_url: returnUrl },
+                },
+              },
+            })
+
+            return c.json({ success: true, url: session.url }, 200)
+          } catch (error) {
+            // A portal configuration without cancellation enabled must not
+            // block access; fall back to the generic portal instead.
+            console.error(
+              "Stripe cancel flow failed:",
+              errorMessage(error, "unknown error")
+            )
+          }
+        }
+      }
+
+      const session = await stripe.billingPortal.sessions.create({
         customer: user.stripeCustomerId,
-        return_url: `${appUrl()}/billing`,
+        return_url: returnUrl,
       })
 
       return c.json({ success: true, url: session.url }, 200)

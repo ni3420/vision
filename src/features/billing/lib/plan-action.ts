@@ -3,6 +3,7 @@ import { PLANS, type PlanId } from "@/lib/plans"
 export type PlanAction =
   | { kind: "current"; label: string }
   | { kind: "checkout"; label: string; disabled: boolean }
+  | { kind: "change"; label: string; disabled: boolean }
   | {
       kind: "portal"
       label: string
@@ -22,9 +23,9 @@ const NO_SUBSCRIPTION_HINT =
   "Plan changes need an active Stripe subscription."
 
 /**
- * Existing subscribers never start a second Checkout: upgrades, switches, and
- * the move to Free all happen in the Billing Portal so Stripe prorates and
- * cancels the current subscription.
+ * Existing subscribers switch paid plans through the Stripe API so upgrades
+ * work even though the default Billing Portal config disables plan changes.
+ * Cancelling (moving to Free) still goes through the portal.
  */
 export function planActionFor({
   planId,
@@ -54,10 +55,20 @@ export function planActionFor({
         ? `Upgrade to ${plan.name}`
         : `Switch to ${plan.name}`
 
-  return {
-    kind: "portal",
-    label,
-    disabled: !canManageSubscription,
-    hint: canManageSubscription ? null : NO_SUBSCRIPTION_HINT,
+  if (planId === "FREE") {
+    return {
+      kind: "portal",
+      label,
+      disabled: !canManageSubscription,
+      hint: canManageSubscription ? null : NO_SUBSCRIPTION_HINT,
+    }
   }
+
+  if (canManageSubscription) {
+    return { kind: "change", label, disabled: !purchasable }
+  }
+
+  // A paid plan without a Stripe subscription (manual grant) has nothing to
+  // update, so the paid plan is bought with a fresh Checkout instead.
+  return { kind: "checkout", label, disabled: !purchasable }
 }

@@ -12,22 +12,28 @@ interface PlanCardsProps {
   currentPlan: PlanId
   isPaid: boolean
   pendingPlan?: PaidPlanId | null
+  changePending?: PaidPlanId | null
   managing?: boolean
   includeFree?: boolean
   canManageSubscription?: boolean
   onChoose: (plan: PaidPlanId) => void
+  onChange?: (plan: PaidPlanId) => void
   onManage?: () => void
+  onCancel?: () => void
 }
 
 export function PlanCards({
   currentPlan,
   isPaid,
   pendingPlan,
+  changePending,
   managing = false,
   includeFree = false,
   canManageSubscription = true,
   onChoose,
+  onChange,
   onManage,
+  onCancel,
 }: PlanCardsProps) {
   const { data } = useBillingPlans()
   const availability = new Map(
@@ -49,7 +55,7 @@ export function PlanCards({
         const isCurrent = plan.id === currentPlan
         const available =
           plan.id === "FREE" ? true : (availability.get(plan.id) ?? true)
-        const busy = pendingPlan === plan.id
+        const busy = pendingPlan === plan.id || changePending === plan.id
         const credits =
           plan.id === "FREE"
             ? `${plan.trialCredits} credits · ${plan.trialDays} days`
@@ -87,13 +93,33 @@ export function PlanCards({
               {action.label}
             </button>
           )
+        } else if (action.kind === "change") {
+          actionNode = (
+            <button
+              type="button"
+              onClick={() => onChange?.(plan.id as PaidPlanId)}
+              disabled={action.disabled || busy || !onChange}
+              className={cn(
+                "flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                plan.highlighted
+                  ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                  : "border border-border bg-background text-foreground hover:bg-secondary"
+              )}
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {action.label}
+            </button>
+          )
         } else {
+          const portalHandler =
+            plan.id === "FREE" ? (onCancel ?? onManage) : onManage
+
           actionNode = (
             <div className="space-y-1.5">
               <button
                 type="button"
-                onClick={onManage}
-                disabled={!onManage || managing || action.disabled}
+                onClick={portalHandler}
+                disabled={!portalHandler || managing || action.disabled}
                 title={action.hint ?? undefined}
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background text-xs font-bold text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
               >

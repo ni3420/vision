@@ -27,14 +27,21 @@ One dedicated credit is charged per request (one image request, one chat reply, 
 | --- | --- |
 | `GET /api/billing/plans` | Plan catalog with a `purchasable` flag per paid plan |
 | `POST /api/billing/checkout` | Creates/reuses a Stripe customer, then a subscription Checkout session |
+| `POST /api/billing/change-plan` | Switches an existing subscription between Basic and Pro (Stripe proration) |
 | `POST /api/billing/portal` | Opens the Stripe Billing Portal for the stored customer |
 | `POST /api/billing/webhook` | Public, signature-verified Stripe events |
 
-Checkout and portal are rate limited (10/min/user). Checkout rejects an already-paid user with `409 ALREADY_SUBSCRIBED`; the portal rejects a user without a customer with `400 NO_BILLING_ACCOUNT`.
+Checkout, plan changes, and portal are rate limited (10/min/user). Checkout rejects a user who
+already has a Stripe subscription with `409 ALREADY_SUBSCRIBED`; a paid plan without a
+subscription (manual grant) can still start Checkout. The portal rejects a user without a
+customer with `400 NO_BILLING_ACCOUNT`.
 
 `GET /api/auth/current` also returns `canManageSubscription`, which is true only when a real
-Stripe subscription id is stored. Plan changes for an existing subscriber never go through
-Checkout; they are made in the Billing Portal so Stripe handles proration and cancellation.
+Stripe subscription id is stored. Paid-to-paid plan changes update the subscription through
+the Stripe API (`change-plan`) and sync the local plan immediately; the matching
+`customer.subscription.updated` webhook repeats the same update. Moving to Free (cancelling)
+still goes through the Billing Portal, so the default portal configuration only needs
+cancellation enabled.
 
 ## Webhook behaviour
 
@@ -58,8 +65,11 @@ Subscription events resolve the user from `metadata.userId` (set on the Checkout
 - Plan buttons are plan-aware (`src/features/billing/lib/plan-action.ts`):
   - current plan -> `Current plan`
   - FREE user -> `Included` on Free, `Choose Basic/Pro` (Checkout) on paid plans
-  - subscriber -> `Downgrade to Free` on Free, `Upgrade to Pro` / `Switch to Basic` on the other paid plan; all go to the Billing Portal so no second subscription is created
-  - a paid plan without a stored Stripe subscription (for example a manually granted plan) disables the portal buttons and explains that plan changes need a subscription.
+  - subscriber -> `Downgrade to Free` opens the Billing Portal's cancellation deep link, while
+    `Upgrade to Pro` / `Switch to Basic` call `change-plan`; the default portal config keeps
+    `subscription_update` disabled because upgrades no longer depend on it
+  - a paid plan without a stored Stripe subscription (for example a manually granted plan)
+    buys the target paid plan with Checkout
 
 ## Environment
 
@@ -72,6 +82,20 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 `STRIPE_PRO_PRICE_ID` falls back to the legacy `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID` when empty.
+
+Stripe return URLs use `NEXT_PUBLIC_APP_URL` in production and the browser's request
+origin in development, so tunnels such as ngrok never fall back to `localhost` (which
+loses the session). Checkout success/cancel return to `/billing`.
+
+`POST /api/billing/portal` takes `{ flow: "manage" | "cancel" }`:
+
+- `cancel` creates a portal session with `flow_data.type=subscription_cancel` and
+  `after_completion.type=redirect` to `/`, so Stripe redirects to the dashboard
+  automatically once the cancellation is confirmed. If the subscription is already
+  cancelling, or the portal config disallows cancelling, it falls back to the generic
+  portal (whose return link also points to `/`).
+- `manage` opens the generic portal; it returns to `/` when the customer clicks the
+  portal's return link.
 
 ## Verifying locally
 

@@ -31,3 +31,32 @@ export function appUrl(): string {
     "http://localhost:3000"
   )
 }
+
+// Stripe redirects the browser back to an absolute URL. In development the app
+// is often reachable through a tunnel (ngrok, LAN), so NEXT_PUBLIC_APP_URL
+// would send the user to a different origin where their session does not
+// exist. Production stays pinned to the configured URL.
+export function requestAppUrl(request: Request): string {
+  if (process.env.NODE_ENV === "production") return appUrl()
+
+  const origin = request.headers.get("origin")
+  if (origin) {
+    try {
+      const parsed = new URL(origin)
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        return parsed.origin
+      }
+    } catch {
+      // Fall through to the host headers below.
+    }
+  }
+
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+  if (host) {
+    const proto = request.headers.get("x-forwarded-proto") ?? "http"
+    return `${proto}://${host}`
+  }
+
+  return appUrl()
+}

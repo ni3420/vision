@@ -86,7 +86,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | --- | --- | --- |
 | Database | `DB_URL` | Always |
 | Auth | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Always |
-| App | `NEXT_PUBLIC_APP_URL` | Always (Stripe redirects) |
+| App | `NEXT_PUBLIC_APP_URL` | Production (Stripe redirects; dev uses the request origin) |
 | Runtime mode | `AI_MODE` (`auto` \| `live` \| `mock`) | Optional, defaults to `auto` |
 | Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` (your own Worker), or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (direct) | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
@@ -189,6 +189,7 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `GET` | `/api/assets/:key` | Owner-only local asset read |
 | `GET` | `/api/billing/plans` | Plan catalog plus which plans have a configured Stripe price |
 | `POST` | `/api/billing/checkout` | Create a Checkout session for `BASIC` or `PRO` |
+| `POST` | `/api/billing/change-plan` | Switch an existing Stripe subscription between `BASIC` and `PRO` |
 | `POST` | `/api/billing/portal` | Create a Billing Portal session for the stored customer |
 | `POST` | `/api/billing/webhook` | Stripe events (public, signature-verified, idempotent) |
 
@@ -201,7 +202,7 @@ Stable error codes include `TRIAL_EXPIRED` (403), `QUOTA_EXCEEDED` (403), `USER_
 - Quantity: 1–2 images per request.
 - Conversation messages: 4000 characters server-side; only the last 12 turns are sent to the model.
 - Background uploads: PNG, JPEG, or WebP; file signature must match the declared type; 10 MB maximum.
-- Rate limits per user, per route (fixed one-minute window): image 10, background 10, conversation message 30, billing checkout/portal 10. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
+- Rate limits per user, per route (fixed one-minute window): image 10, background 10, conversation message 30, billing checkout/plan-change/portal 10. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
 
 ## Data model
 

@@ -121,6 +121,16 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
   )
 }
 
+/**
+ * Applies a subscription object fetched or updated by the API routes so local
+ * entitlements change even before the matching webhook is delivered.
+ */
+export async function applySubscriptionChange(
+  subscription: Stripe.Subscription
+): Promise<void> {
+  await handleSubscriptionChange(subscription)
+}
+
 async function userIdForInvoice(invoice: Stripe.Invoice): Promise<string | null> {
   const metadata = invoice.parent?.subscription_details?.metadata
   if (metadata?.userId) return metadata.userId

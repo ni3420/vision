@@ -73,7 +73,7 @@ describe("planActionFor", () => {
     })
   })
 
-  it("labels a higher paid plan as an upgrade", () => {
+  it("labels a higher paid plan as an upgrade handled by the API", () => {
     const action = planActionFor({
       ...base,
       planId: "PRO",
@@ -81,11 +81,14 @@ describe("planActionFor", () => {
       isPaid: true,
     })
 
-    expect(action.kind).toBe("portal")
-    expect(action.label).toBe("Upgrade to Pro")
+    expect(action).toEqual({
+      kind: "change",
+      label: "Upgrade to Pro",
+      disabled: false,
+    })
   })
 
-  it("labels a lower paid plan as a switch", () => {
+  it("labels a lower paid plan as a switch handled by the API", () => {
     const action = planActionFor({
       ...base,
       planId: "BASIC",
@@ -93,14 +96,49 @@ describe("planActionFor", () => {
       isPaid: true,
     })
 
-    expect(action.kind).toBe("portal")
-    expect(action.label).toBe("Switch to Basic")
+    expect(action).toEqual({
+      kind: "change",
+      label: "Switch to Basic",
+      disabled: false,
+    })
   })
 
-  it("explains why plan changes are unavailable without a subscription", () => {
+  it("disables a plan change when the price is missing", () => {
     const action = planActionFor({
       planId: "PRO",
       currentPlan: "BASIC",
+      isPaid: true,
+      purchasable: false,
+      canManageSubscription: true,
+    })
+
+    expect(action).toEqual({
+      kind: "change",
+      label: "Upgrade to Pro",
+      disabled: true,
+    })
+  })
+
+  it("buys a paid plan with Checkout when no subscription exists", () => {
+    const action = planActionFor({
+      planId: "PRO",
+      currentPlan: "BASIC",
+      isPaid: true,
+      purchasable: true,
+      canManageSubscription: false,
+    })
+
+    expect(action).toEqual({
+      kind: "checkout",
+      label: "Upgrade to Pro",
+      disabled: false,
+    })
+  })
+
+  it("keeps the Free downgrade in the portal when there is no subscription", () => {
+    const action = planActionFor({
+      planId: "FREE",
+      currentPlan: "PRO",
       isPaid: true,
       purchasable: true,
       canManageSubscription: false,

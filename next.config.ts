@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
- allowedDevOrigins: ['womb-tutu-lagging.ngrok-free.dev'],
+ allowedDevOrigins: ['aptitude-fantasize-scant.ngrok-free.dev'],
  output: 'standalone',
 };
 

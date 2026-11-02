@@ -17,6 +17,7 @@ import { PLANS, planPriceLabel } from "@/lib/plans"
 import { cn } from "@/lib/utils"
 
 import { useBillingPlans } from "../api/use-billing-plans"
+import { useChangePlan } from "../api/use-change-plan"
 import { useCheckout } from "../api/use-checkout"
 import { usePortal } from "../api/use-portal"
 import { PlanCards } from "./plan-cards"
@@ -45,6 +46,7 @@ export function BillingPage() {
   } = useCurrentUser()
   const { data: plansResponse } = useBillingPlans()
   const checkout = useCheckout()
+  const changePlan = useChangePlan()
   const portal = usePortal()
 
   const entitlements = userResponse?.data
@@ -69,8 +71,23 @@ export function BillingPage() {
     })
   }
 
+  const handleChange = (nextPlan: "BASIC" | "PRO") => {
+    changePlan.mutate(nextPlan, {
+      onSuccess: ({ plan: changed }) => {
+        toast.success(`You are now on the ${PLANS[changed].name} plan.`)
+      },
+      onError: (error) => toast.error(error.message),
+    })
+  }
+
   const handleManage = () => {
-    portal.mutate(undefined, {
+    portal.mutate({ flow: "manage" }, {
+      onError: (error) => toast.error(error.message),
+    })
+  }
+
+  const handleCancel = () => {
+    portal.mutate({ flow: "cancel" }, {
       onError: (error) => toast.error(error.message),
     })
   }
@@ -258,11 +275,16 @@ export function BillingPage() {
           currentPlan={entitlements.plan}
           isPaid={entitlements.isPaid}
           pendingPlan={checkout.isPending ? (checkout.variables ?? null) : null}
+          changePending={
+            changePlan.isPending ? (changePlan.variables ?? null) : null
+          }
           managing={portal.isPending}
           includeFree
           canManageSubscription={canManageSubscription}
           onChoose={handleChoose}
+          onChange={handleChange}
           onManage={handleManage}
+          onCancel={handleCancel}
         />
       </section>
 
