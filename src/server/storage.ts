@@ -148,7 +148,7 @@ function s3(): S3Client {
 
 export function buildObjectKey(
   userId: string,
-  kind: "image" | "music",
+  kind: "image" | "background",
   extension: string
 ) {
   const now = new Date();

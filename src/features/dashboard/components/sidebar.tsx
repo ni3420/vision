@@ -9,7 +9,7 @@ import {
   ImageIcon, 
   Clapperboard, 
   MessagesSquare, 
-  AudioLines, 
+  Eraser, 
   LayoutDashboard,
   LogOut,
   Loader2
@@ -44,9 +44,9 @@ const NAV_ITEMS: {
     href: "/conversation",
   },
   {
-    label: "Music Generator",
-    icon: AudioLines,
-    href: "/music-generator",
+    label: "Background Studio",
+    icon: Eraser,
+    href: "/background-studio",
   },
 ];
 

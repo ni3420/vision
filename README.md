@@ -1,6 +1,6 @@
 # Vision
 
-An AI creative studio that puts image generation, conversation, and music generation in one workspace. Built as a full-stack Next.js application with a Hono API, MongoDB persistence, Clerk authentication, and Stripe billing.
+An AI creative studio that puts image generation, background removal, and conversation in one workspace. Built as a full-stack Next.js application with a Hono API, MongoDB persistence, Clerk authentication, and Stripe billing.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
@@ -20,7 +20,7 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Image generation | Cloudflare Workers AI FLUX.2 [klein] 4B through a Worker or the API directly, 1–2 images per request, private storage; prompt examples, ratio tiles, cost label, retryable error states |
 | Theming | Light, dark, and system toggle in the navbar (`next-themes`, token-driven) |
 | Conversation | Groq `openai/gpt-oss-120b` with Gemini `gemini-3.6-flash` fallback, 60 s timeout and 3 bounded retries; request/response (no streaming) |
-| Music generation | Treblo v3, stored as a playable audio asset |
+| Background removal | Photoroom `segment-v1`, transparent PNG, original kept for comparison; a labelled local mock runs when `PHOTOROOM_API_KEY` is absent outside production |
 | Video generation | Not available — no provider is configured or integrated |
 | Free plan quota | 5 generations per account, enforced server-side |
 | Pro upgrade | Stripe Checkout; the webhook flips the plan to PRO |
@@ -34,12 +34,12 @@ flowchart TD
     User["Browser"]
     Next["Next.js App Router<br/>dashboard UI + Clerk"]
     API["Hono API<br/>/api/*"]
-    DB[("MongoDB<br/>users, assets, conversations, music, ledger")]
+    DB[("MongoDB<br/>users, assets, backgrounds, conversations, ledger")]
     Store[("Storage<br/>Backblaze B2 (S3 API) / ImageKit")]
     CF["Cloudflare Worker<br/>FLUX.2 klein 4B"]
     Groq["Groq<br/>chat completions"]
     Gemini["Gemini<br/>fallback"]
-    Treblo["Treblo v3"]
+    Photoroom["Photoroom<br/>segment-v1"]
     Stripe["Stripe<br/>Checkout + webhook"]
 
     User --> Next
@@ -49,7 +49,7 @@ flowchart TD
     API --> CF
     API --> Groq
     API -. fallback .-> Gemini
-    API --> Treblo
+    API --> Photoroom
     API --> Stripe
     Stripe -. webhook .-> API
 ```
@@ -89,7 +89,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | Runtime mode | `AI_MODE` (`auto` \| `live` \| `mock`) | Optional, defaults to `auto` |
 | Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` (your own Worker), or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (direct) | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
-| Music provider | `TREBLO_API_KEY` | For live music |
+| Background provider | `PHOTOROOM_API_KEY` | For live background removal |
 | Storage | `STORAGE_DRIVER` (`s3` \| `imagekit` \| `local`), `LOCAL_STORAGE_DIR`, `S3_*`, `IMAGEKIT_URL_ENDPOINT`, `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_PRIVATE_FILES` | Backblaze B2 (`s3`) in this repo's `.env.local`; `local` is dev-only |
 | Billing | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | For checkout |
 
@@ -99,7 +99,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 
 - **Image** — a locally rendered gradient card with the prompt, resized with `sharp`.
 - **Chat** — a canned reply that repeats the prompt.
-- **Music** — a synthesized WAV chord, capped at 20 seconds.
+- **Background** — a locally masked placeholder PNG with a visible label, so the comparison UI and alpha channel can be exercised without spending Photoroom credits.
 
 In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFIGURED` instead of silently faking output.
 
@@ -107,7 +107,7 @@ In production, missing keys resolve to `live` and return `503 PROVIDER_NOT_CONFI
 
 ### Storage
 
-Generated images and music are written to **Backblaze B2** through its S3-compatible API. This repo's `.env.local` sets `STORAGE_DRIVER=s3`, and the endpoint is accepted with or without a scheme (a bare `s3.<region>.backblazeb2.com` gets `https://` prepended).
+Generated images, background uploads, and cutouts are written to **Backblaze B2** through its S3-compatible API. This repo's `.env.local` sets `STORAGE_DRIVER=s3`, and the endpoint is accepted with or without a scheme (a bare `s3.<region>.backblazeb2.com` gets `https://` prepended).
 
 - `STORAGE_DRIVER=s3` works with Backblaze B2, AWS S3, and Cloudflare R2 (`S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`); reads return short-lived presigned URLs.
 - `STORAGE_DRIVER=imagekit` uploads server-side to ImageKit and stores the durable CDN URL on the asset, so history never depends on a URL that expires. Set `IMAGEKIT_PRIVATE_FILES=true` to upload private files, which are served with signed `ik-t`/`ik-s` URLs instead.
@@ -151,7 +151,7 @@ The Worker accepts `POST /generate` with JSON `{ prompt, width?, height?, aspect
 | `bun run typecheck` | `tsc --noEmit` |
 | `bun run lint` | ESLint |
 | `bun run test` | Unit tests (Bun runner): quota, rate limiting, dashboard summary, image schemas, generation error copy, AI mode resolution |
-| `bun run smoke` | Adapter smoke test; forces `AI_MODE=mock` and verifies JPEG bytes, resizing, chat text, WAV output, and a storage round-trip |
+| `bun run smoke` | Adapter smoke test; forces `AI_MODE=mock` and verifies JPEG bytes, resizing, chat text, a transparent cutout PNG, and a storage round-trip |
 
 ## API
 
@@ -163,8 +163,8 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `GET` | `/api/auth/current` | Current user (plan, `freeUsesCount`) |
 | `POST` | `/api/image` | Generate 1–2 images (`prompt`, `dimensions`, `quantity`) |
 | `GET` | `/api/image/history` | 60 newest image assets |
-| `POST` | `/api/music/generate` | Generate a track and store it |
-| `GET` | `/api/music/history` | 50 newest tracks with fresh URLs |
+| `POST` | `/api/background` | Remove the background (`multipart/form-data`, field `image`; PNG/JPEG/WebP up to 10 MB) |
+| `GET` | `/api/background/history` | 30 newest cutouts with fresh source and result URLs |
 | `POST` | `/api/conversation/session` | Create a conversation (optionally with a first message; the server generates the id) |
 | `POST` | `/api/conversation/message` | Append a user message and get the reply |
 | `GET` | `/api/conversation/all` | Session summaries (title, message count, preview, last message time); `?limit=` 1–100 |
@@ -184,30 +184,32 @@ Stable error codes include `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404),
 - Dimensions: 64–1536 px per side, `WIDTH*HEIGHT` format.
 - Quantity: 1–2 images per request.
 - Conversation messages: 4000 characters server-side; only the last 12 turns are sent to the model.
-- Rate limits per user, per route (fixed one-minute window): image 10, music 6, conversation message 30. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
+- Background uploads: PNG, JPEG, or WebP; file signature must match the declared type; 10 MB maximum.
+- Rate limits per user, per route (fixed one-minute window): image 10, background 10, conversation message 30. Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; a `429` adds `Retry-After`.
 
 ## Data model
 
 | Collection | Holds |
 | --- | --- |
 | `users` | Clerk `userId`, email, name, plan, `freeUsesCount` |
-| `assets` | Image/music metadata: object key, MIME, bytes, dimensions, prompt, provider, model |
+| `assets` | Image metadata: object key, MIME, bytes, dimensions, prompt, provider, model |
+| `backgrounds` | Source and cutout object keys, MIME, bytes, dimensions, provider, model, mock flag |
 | `usage_ledger` | Reservation records with a unique sparse idempotency key |
 | `rate_limits` | Per-user, per-route window counters; a TTL index expires them |
 | `conversations` | Session metadata and message history |
-| `music` | Track metadata, object key, provider, model, duration |
 
 ## Known limitations
 
 - **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
 - **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image and conversation schemas, chat/generation error copy, grouping and relative-time helpers, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
-- **UI verification** for the image-generator and conversation redesigns is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
+- **Background removal** calls Photoroom's segment endpoint; without `PHOTOROOM_API_KEY` outside production it returns a visibly labelled local mock. No live Photoroom call was made in this environment (no key), so the contract is documentation- and stub-tested only.
+- **UI verification** for the image-generator, conversation, and background-studio surfaces is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
 - **Stripe webhooks** do not persist event IDs, so a duplicated delivery is processed twice.
 - **Live chat** targets `openai/gpt-oss-120b` and `gemini-3.6-flash`, but those IDs are documentation-verified rather than exercised here: the local key is a placeholder, so no provider call was made. Chat is still request/response — no streaming, stop button, or token usage.
 - **Rate limiting** covers the three charged routes only; auth, creating an empty session, checkout, and history reads are unmetered. The limiter fails open if MongoDB is unreachable. A session created with a first message is rate limited.
 - **Quota** is a lifetime free allowance of 5 units; it does not reset monthly. PRO has no usage cap in code.
 - The free-quota path has not been exercised against a live MongoDB here; unit tests mock the models and the HTTP flow is statically verified only.
-- History endpoints return the newest 60 images / 50 tracks; cursor pagination is not implemented.
+- History endpoints return the newest 60 images / 30 cutouts; cursor pagination is not implemented.
 
 ## Roadmap
 

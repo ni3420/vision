@@ -1,8 +1,8 @@
 import type { Model } from "mongoose"
 
 import { Asset } from "@/models/asset.models"
+import { Background } from "@/models/background.models"
 import { Conversation } from "@/models/conversation.models"
-import { Music } from "@/models/music.models"
 import { User } from "@/models/user.models"
 import { startOfUtcDay, type FacetCounts } from "./summary"
 
@@ -12,7 +12,7 @@ const SERIES_DAYS = 7
 export interface DashboardData {
   user: { plan?: string; freeUsesCount?: number } | null
   images: FacetCounts
-  music: FacetCounts
+  backgrounds: FacetCounts
   conversations: FacetCounts
   now: Date
 }
@@ -67,14 +67,14 @@ export async function loadDashboardData(
     new Date(now.getTime() - (SERIES_DAYS - 1) * DAY_MS)
   )
 
-  const [user, images, music, conversations] = await Promise.all([
+  const [user, images, backgrounds, conversations] = await Promise.all([
     User.findOne({ userId })
       .select("plan freeUsesCount")
       .lean<{ plan?: string; freeUsesCount?: number } | null>(),
     loadFacet(Asset, { userId, kind: "image" }, since),
-    loadFacet(Music, { userId }, since),
+    loadFacet(Background, { userId }, since),
     loadFacet(Conversation, { userId }, since),
   ])
 
-  return { user, images, music, conversations, now }
+  return { user, images, backgrounds, conversations, now }
 }

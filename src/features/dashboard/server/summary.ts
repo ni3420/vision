@@ -1,13 +1,13 @@
 import { FREE_GENERATION_LIMIT } from "@/server/quota"
 
-export type UsageKey = "chat" | "image" | "music"
+export type UsageKey = "chat" | "image" | "background"
 
 export interface DailyUsage {
   date: string
   day: string
   chat: number
   image: number
-  music: number
+  background: number
 }
 
 export interface FacetCounts {
@@ -25,7 +25,7 @@ export interface DashboardSnapshot {
   counts: {
     conversations: number
     images: number
-    music: number
+    backgrounds: number
     total: number
   }
   weekly: DailyUsage[]
@@ -60,7 +60,7 @@ export function buildWeeklySeries(
       day: DAY_NAMES[date.getUTCDay()],
       chat: buckets.chat?.[key] ?? 0,
       image: buckets.image?.[key] ?? 0,
-      music: buckets.music?.[key] ?? 0,
+      background: buckets.background?.[key] ?? 0,
     }
   })
 }
@@ -69,7 +69,7 @@ export function buildSnapshot(input: {
   plan?: string
   freeUsesCount?: number
   images: FacetCounts
-  music: FacetCounts
+  backgrounds: FacetCounts
   conversations: FacetCounts
   now: Date
 }): DashboardSnapshot {
@@ -86,15 +86,15 @@ export function buildSnapshot(input: {
     counts: {
       conversations: input.conversations.total,
       images: input.images.total,
-      music: input.music.total,
+      backgrounds: input.backgrounds.total,
       total:
-        input.conversations.total + input.images.total + input.music.total,
+        input.conversations.total + input.images.total + input.backgrounds.total,
     },
     weekly: buildWeeklySeries(
       {
         chat: input.conversations.buckets,
         image: input.images.buckets,
-        music: input.music.buckets,
+        background: input.backgrounds.buckets,
       },
       input.now
     ),

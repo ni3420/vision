@@ -13,7 +13,7 @@ import type { DailyUsage } from "../server/summary"
 const SERIES = [
   { key: "chat", label: "Chat", color: "#6366f1" },
   { key: "image", label: "Image", color: "#ec4899" },
-  { key: "music", label: "Music", color: "#8b5cf6" },
+  { key: "background", label: "Background", color: "#14b8a6" },
 ] as const
 
 export function UsageChart({ data }: { data: DailyUsage[] }) {

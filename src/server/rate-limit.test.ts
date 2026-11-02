@@ -61,7 +61,7 @@ const imagePolicy = RATE_LIMITS.image;
 /** Consume once at a fixed instant; `offsetSec` is relative to window start. */
 function consumeAt(
   offsetSec: number,
-  overrides: Partial<{ userId: string; route: "image" | "music" }> = {}
+  overrides: Partial<{ userId: string; route: "image" | "background" }> = {}
 ) {
   return consumeRateLimit({
     userId: overrides.userId ?? "user-1",
@@ -127,7 +127,7 @@ describe("consumeRateLimit", () => {
     }
 
     const otherUser = await consumeAt(0, { userId: "user-2" });
-    const otherRoute = await consumeAt(0, { userId: "user-1", route: "music" });
+    const otherRoute = await consumeAt(0, { userId: "user-1", route: "background" });
 
     expect(otherUser.allowed).toBe(true);
     expect(otherRoute.allowed).toBe(true);

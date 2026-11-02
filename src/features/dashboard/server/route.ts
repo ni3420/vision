@@ -49,7 +49,7 @@ export function createDashboardRouter(options: {
             plan: data.user.plan,
             freeUsesCount: data.user.freeUsesCount,
             images: data.images,
-            music: data.music,
+            backgrounds: data.backgrounds,
             conversations: data.conversations,
             now: data.now,
           }),

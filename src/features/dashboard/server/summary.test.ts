@@ -34,7 +34,7 @@ describe("buildWeeklySeries", () => {
 
     expect(series[6].image).toBe(3);
     expect(series[6].chat).toBe(0);
-    expect(series[6].music).toBe(0);
+    expect(series[6].background).toBe(0);
     expect(series[0].image).toBe(0);
   });
 });
@@ -42,7 +42,7 @@ describe("buildWeeklySeries", () => {
 describe("buildSnapshot", () => {
   const counts = {
     images: { total: 2, buckets: {} },
-    music: { total: 1, buckets: {} },
+    backgrounds: { total: 1, buckets: {} },
     conversations: { total: 3, buckets: {} },
   };
 

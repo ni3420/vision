@@ -3,8 +3,8 @@ export const runtime = 'nodejs'; // or 'edge' if using edge runtime
 import { Hono } from 'hono'
 import { handle } from 'hono/vercel'
 import ImageRouter from "@/features/image/server/route"
+import BackgroundRouter from "@/features/background/server/route"
 import authRouter from "@/features/auth/server/route"
-import musicRouter from "@/features/music/server/route"
 import subscriptionRouter from "@/features/Subscription/server/route"
 import { DB } from '@/db/db'
 import conversationRouter from "@/features/conversation/server/route"
@@ -27,9 +27,9 @@ const app = new Hono().basePath('/api')
 })
 .route("/auth", authRouter)
 .route("/image", ImageRouter)
+.route("/background", BackgroundRouter)
 .route("/conversation",conversationRouter)
 .route("/dashboard", dashboardRouter)
-.route("/music",musicRouter)
 .route("/assets", assetsRouter)
 .route("/stripe",subscriptionRouter)
 

@@ -7,10 +7,10 @@ import {
   Activity,
   ArrowUpRight,
   Crown,
+  Eraser,
   Image as ImageIcon,
   Info,
   MessagesSquare,
-  AudioLines,
   RefreshCw,
   ShieldCheck,
   Zap,
@@ -40,20 +40,20 @@ const DistributionChart = dynamic(
 const QUICK_ACTIONS = [
   { label: "New image", href: "/image-generator", icon: ImageIcon },
   { label: "Start chat", href: "/conversation", icon: MessagesSquare },
-  { label: "Make music", href: "/music-generator", icon: AudioLines },
+  { label: "Remove background", href: "/background-studio", icon: Eraser },
 ]
 
 const STAT_TONES = {
   indigo: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   pink: "bg-pink-500/10 text-pink-500 border-pink-500/20",
-  purple: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  teal: "bg-teal-500/10 text-teal-500 border-teal-500/20",
   amber: "bg-amber-500/10 text-amber-500 border-amber-500/20",
 } as const
 
 const WEEKLY_SERIES = [
   { label: "Chat", color: "bg-indigo-500" },
   { label: "Image", color: "bg-pink-500" },
-  { label: "Music", color: "bg-purple-500" },
+  { label: "Background", color: "bg-teal-500" },
 ]
 
 interface StatCardProps {
@@ -165,7 +165,7 @@ export const DashBoardPage = () => {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-foreground">Dashboard</h1>
             <p className="text-xs text-muted-foreground mt-1">
-              Every image, conversation, and track in one place.
+              Every image, conversation, and cutout in one place.
             </p>
           </div>
 
@@ -228,11 +228,11 @@ export const DashBoardPage = () => {
                 tone="indigo"
               />
               <StatCard
-                label="Music tracks"
-                value={snapshot.counts.music}
+                label="Backgrounds removed"
+                value={snapshot.counts.backgrounds}
                 badge="All time"
-                icon={AudioLines}
-                tone="purple"
+                icon={Eraser}
+                tone="teal"
               />
               <div className="bg-card border border-border/60 rounded-3xl p-5 shadow-sm">
                 <div className="flex items-center justify-between">
@@ -311,8 +311,8 @@ export const DashBoardPage = () => {
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     Free accounts get {snapshot.user.limit} generations across images,
-                    conversations, and music. Pro removes the limit. Each request counts
-                    once, even when it returns two images.
+                    conversations, and background cutouts. Pro removes the limit. Each
+                    request counts once, even when it returns two images.
                   </p>
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <Activity className="h-3 w-3 text-primary" />

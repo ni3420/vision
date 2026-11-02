@@ -1,6 +1,6 @@
 import { RateLimitHit } from "@/models/rate-limit.models";
 
-export type RateLimitRoute = "image" | "music" | "conversation";
+export type RateLimitRoute = "image" | "background" | "conversation";
 
 export interface RateLimitPolicy {
   limit: number;
@@ -13,7 +13,7 @@ export interface RateLimitPolicy {
  */
 export const RATE_LIMITS: Record<RateLimitRoute, RateLimitPolicy> = {
   image: { limit: 10, windowMs: 60_000 },
-  music: { limit: 6, windowMs: 60_000 },
+  background: { limit: 10, windowMs: 60_000 },
   conversation: { limit: 30, windowMs: 60_000 },
 };
 

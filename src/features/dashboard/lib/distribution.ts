@@ -8,15 +8,15 @@ export interface DistributionSlice {
 const COLORS = {
   conversations: "#6366f1",
   images: "#ec4899",
-  music: "#8b5cf6",
+  backgrounds: "#14b8a6",
 }
 
 export function buildDistribution(counts: {
   conversations: number
   images: number
-  music: number
+  backgrounds: number
 }): DistributionSlice[] {
-  const total = counts.conversations + counts.images + counts.music
+  const total = counts.conversations + counts.images + counts.backgrounds
 
   const percent = (value: number) =>
     total === 0 ? 0 : Math.round((value / total) * 100)
@@ -35,10 +35,10 @@ export function buildDistribution(counts: {
       color: COLORS.images,
     },
     {
-      name: "Music",
-      value: counts.music,
-      percent: percent(counts.music),
-      color: COLORS.music,
+      name: "Backgrounds",
+      value: counts.backgrounds,
+      percent: percent(counts.backgrounds),
+      color: COLORS.backgrounds,
     },
   ]
 }

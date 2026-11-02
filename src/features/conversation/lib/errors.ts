@@ -38,7 +38,7 @@ export function describeChatError(input: ChatErrorInput): ChatErrorCopy {
     if (code === "QUOTA_EXCEEDED") {
       return {
         title: "Free credits used up",
-        message: "Upgrade to Pro to keep chatting, or use the remaining free credits on images or music.",
+        message: "Upgrade to Pro to keep chatting, or use the remaining free credits on images or background cutouts.",
         retryable: false,
       };
     }

@@ -124,7 +124,7 @@ describe("reserveQuota", () => {
 
     const reservation = await reserveQuota({
       userId: "user-1",
-      kind: "music",
+      kind: "background",
     });
 
     expect(reservation.ledgerId).toBe("ledger-1");

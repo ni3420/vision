@@ -28,15 +28,17 @@ export interface ChatGenerationResult {
   mock: boolean;
 }
 
-export interface MusicGenerationRequest {
-  prompt: string;
-  durationSec: number;
-}
-
-export interface MusicGenerationResult {
+export interface BackgroundRemovalRequest {
   bytes: Buffer;
   mime: string;
-  durationSec: number;
+  filename: string;
+}
+
+export interface BackgroundRemovalResult {
+  bytes: Buffer;
+  mime: string;
+  width?: number;
+  height?: number;
   provider: string;
   model: string;
   mock: boolean;

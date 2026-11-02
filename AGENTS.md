@@ -53,7 +53,7 @@ Read this file before changing code. Then:
 | Storage | Local filesystem, S3-compatible (`@aws-sdk/client-s3` v3), or ImageKit | `STORAGE_DRIVER=local \| s3 \| imagekit` |
 | Image AI | Cloudflare Workers AI `@cf/black-forest-labs/flux-1-schnell` | `src/server/ai/image.ts` |
 | Chat AI | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | 60 s per attempt, 3 bounded attempts; see §7.2.1 |
-| Music AI | Treblo v3 (`https://api.treblo.com/v1/generations`) | `src/server/ai/music.ts` |
+| Background AI | Photoroom `segment-v1` (`https://sdk.photoroom.com/v1/segment`) | `src/server/ai/background.ts` |
 | Video | **Not implemented** | Honest "Not available yet" page |
 | Tests | `bun test` (Bun built-in runner) + `bun run smoke` | No Vitest/Jest; do not add one without a reason |
 | Package manager | Bun (`bun.lock`) | Do not introduce npm/pnpm/yarn lockfiles |
@@ -87,7 +87,7 @@ sign-in and no session or database is available in this environment.
   `/api/stripe`, and history reads are unmetered. Counters live in Mongo, so a burst can
   cost an extra write per request.
 - No Stripe event-idempotency table; replayed webhooks re-apply the same plan write.
-- History endpoints use a capped `limit` (60 images / 50 tracks), not cursor pagination.
+- History endpoints use a capped `limit` (60 images / 30 cutouts), not cursor pagination.
 - Chat is request/response; no streaming, stop button, or token usage (C-3).
 - Chat retries and timeouts are bounded (2026-11-02); the adapter still runs inside one
   HTTP request, so a slow reply holds the connection.
@@ -99,24 +99,25 @@ sign-in and no session or database is available in this environment.
   a stubbed fetch and the Worker by tests with a fake binding; neither has made a real model
   call, and the Worker has never been deployed.
 - No async job queue: one HTTP request holds the provider call.
-- `Asset.kind` allows `"music"`, but music tracks live in the `Music` collection.
+- Music generation was removed on 2026-11-02. `Asset.kind` and `UsageLedger.kind` keep
+  `"music"` so historical rows stay valid; no new music rows are written.
 - `README.md` and this file plus `docs/conversation-redesign.md` are the project docs.
 
 ---
 
 ## 2. Product surfaces
 
-Vision is a multimodal creative workspace: **generate an image, talk to an assistant, make
-a track, see it in history, understand the free limit, test the upgrade path.** Every
-surface must be usable with a keyboard, readable in light and dark mode, and honest about
-state.
+Vision is a multimodal creative workspace: **generate an image, remove a background, talk
+to an assistant, see it in history, understand the free limit, test the upgrade path.**
+Every surface must be usable with a keyboard, readable in light and dark mode, and honest
+about state.
 
 | Route | Surface | Purpose | Real states |
 |---|---|---|---|
 | `/` | Dashboard | Counts, 7-day activity, workload split, plan meter, quick actions | loading skeleton, empty, error + retry |
 | `/image-generator` | Image Studio | Prompt textarea with counter and examples, ratio tiles, 1–2 variations, cost label, result grid, history tab | idle (skeletons, error + retry, empty), success, mock badge, quota (403 + upgrade modal) |
 | `/conversation` | Chat | Sessions rail (search, grouping, relative time, delete confirm), markdown thread with copy, auto-growing composer, optimistic send, inline rename, `?session=` deep link | no session, empty thread, sending/thinking, send error + retry, mock badge, 404 |
-| `/music-generator` | Music Studio | Prompt, 8/15/20 s duration, track player, history | idle, synthesizing, success, quota, provider error |
+| `/background-studio` | Background Studio | Upload (drag/drop or browse), before/after comparison on a checkerboard, download transparent PNG, cutout history | idle, uploading, removing, success, mock badge, quota (403 + upgrade modal), provider error + retry |
 | `/video-generator` | Video | Honest "not available yet" explanation with links to working tools | static |
 | `/auth/sign-in`, `/auth/sign-up` | Auth | Clerk-hosted components | Clerk-managed |
 
@@ -144,7 +145,7 @@ The sidebar (`src/features/dashboard/components/sidebar.tsx`) and mobile sheet
 ```text
 Browser (Next.js App Router, client components)
   ├── Dashboard shell: sidebar + navbar + <main>
-  ├── Feature pages: image / conversation / music / video
+  ├── Feature pages: image / background / conversation / video
   ├── Feature hooks: TanStack Query + typed hc client
   └── Clerk client session
           │  fetch("/api/*") with Clerk cookies + Idempotency-Key on charged mutations
@@ -152,25 +153,25 @@ Browser (Next.js App Router, client components)
 Hono app (src/app/api/[[...route]]/route.ts)
   ├── clerkMiddleware (publishable key)
   ├── DB() connection guard on every request
-  ├── Routers: auth, image, conversation, dashboard, music, assets, stripe
+  ├── Routers: auth, image, background, conversation, dashboard, assets, stripe
   ├── quotaGuard (reserve → handler → settle/refund)
   ├── Zod validation (@hono/zod-validator)
   └── Provider adapters (src/server/ai/*)
           │
-          ├── MongoDB: users, assets, conversations, music, usageLedger, rateLimits
+          ├── MongoDB: users, assets, backgrounds, conversations, usageLedger, rateLimits
           ├── Storage: local .data/uploads, S3-compatible bucket, or ImageKit
-          └── Providers: Cloudflare, Groq, Gemini, Treblo
+          └── Providers: Cloudflare, Groq, Gemini, Photoroom
 ```
 
 **Ownership boundaries**
 
 - MongoDB is the source of truth for users, plans, quota counters, ledger, conversations,
-  asset metadata, and music metadata.
+  asset metadata, and background-cutout metadata.
 - Storage holds bytes only. MongoDB stores object keys, MIME, size, dimensions, and the
   durable ImageKit URL when one exists. Never store a presigned or signed URL.
 - The server is authoritative for auth, ownership, quota, plan, storage keys, and provider
   calls. The browser only displays what the server returns.
-- The browser may hold transient UI state (form drafts, active tab, playing track).
+- The browser may hold transient UI state (form drafts, active tab, selected upload).
 
 **Request lifecycle for a charged generation**
 
@@ -223,8 +224,8 @@ Rules:
 | `POST` | `/api/conversation/message` | Clerk + rate limit + quota | Appends user + assistant messages; a non-`user` role is rejected `400` |
 | `PATCH` | `/api/conversation/:sessionId` | Clerk | Rename, `{ title }` 1–80 chars |
 | `DELETE` | `/api/conversation/:sessionId` | Clerk | Owned session only |
-| `GET` | `/api/music/history` | Clerk | Latest 50 tracks |
-| `POST` | `/api/music/generate` | Clerk + rate limit + quota | `{ prompt, duration: 5–60 }` |
+| `POST` | `/api/background` | Clerk + rate limit + quota | `multipart/form-data` field `image`; PNG/JPEG/WebP, signature-checked, ≤10 MB |
+| `GET` | `/api/background/history` | Clerk | Latest 30 cutouts with fresh source + result URLs |
 | `GET` | `/api/dashboard/summary` | Clerk | Counts, 7-day series, plan/remaining |
 | `GET` | `/api/assets/:key{.+}` | Clerk | Local driver only; enforces `users/{userId}/` prefix |
 | `POST` | `/api/stripe` | Clerk | Creates Checkout Session; returns `url` |
@@ -262,8 +263,8 @@ Rules:
 | Model | Fields that matter |
 |---|---|
 | `User` | `userId` (Clerk id, unique), `email` (unique), `name`, `plan: "FREE" \| "PRO"`, `freeUsesCount` |
-| `Asset` | `userId`, `kind: "image" \| "music"`, `objectKey` (unique), `mime`, `bytes`, `width`, `height`, `prompt`, `provider`, `model`, `visibility` |
-| `Music` | `userId`, `prompt`, `audioUrl`, `objectKey`, `duration`, `provider`, `model` |
+| `Asset` | `userId`, `kind: "image" \| "music"` (music legacy), `objectKey` (unique), `mime`, `bytes`, `width`, `height`, `prompt`, `provider`, `model`, `visibility` |
+| `Background` | `userId`, `sourceKey`/`sourceUrl`, `objectKey`/`url`, MIME, bytes, dimensions, `provider`, `model`, `mock` |
 | `Conversation` | `userId`, `sessionId` (unique), `messages[]` of `{ role, content, createdAt }` |
 | `UsageLedger` | `userId`, `kind`, `status: "reserved" \| "settled" \| "refunded"`, `idempotencyKey`, `reason` |
 | `RateLimitHit` | `_id = "{userId}:{route}:{windowStartMs}"`, `count`, `windowStart`, `expiresAt` (TTL index) |
@@ -312,7 +313,7 @@ Rules:
 
 ### 6.1 Policy (implemented)
 
-- `FREE_GENERATION_LIMIT = 5`, shared across image, chat, and music.
+- `FREE_GENERATION_LIMIT = 5`, shared across image, chat, and background removal.
 - One request = one unit, even when an image request returns two images.
 - Creating an empty conversation session is free.
 - `PRO` has **no usage cap in code**. The UI must say "no free-tier cap", never
@@ -364,7 +365,7 @@ Rules:
 - **Images are cloud-only.** `generateImage` ignores the `auto` mock fallback and throws
   `PROVIDER_NOT_CONFIGURED` (route returns 503) when no provider key looks configured.
   A local preview happens only with an explicit `AI_MODE=mock`, which `bun run smoke` uses.
-  Chat and music still follow the table above.
+  Chat and background removal still follow the table above.
 - Production must never silently fall back to a mock.
 - Never send user prompts or files to an unapproved fallback.
 - Add timeouts and bounded retries in the adapter, not in the route.
@@ -376,7 +377,7 @@ Rules:
 |---|---|---|
 | Image | Cloudflare FLUX.2 [klein] 4B | multipart `prompt` (≤2048 chars), optional `width`/`height` (64–1536, default 1024), `guidance` (0–20, default 3.5), `seed`; **fixed 4-step schedule, no `steps` param**; 1–2 outputs per request |
 | Chat | Groq `openai/gpt-oss-120b`, Gemini `gemini-3.6-flash` fallback | last 12 messages + new message, 4000 chars each |
-| Music | Treblo v3 | prompt, 5–60 s duration (UI offers 8/15/20) |
+| Background | Photoroom `segment-v1` | multipart `image_file` (PNG/JPEG/WebP, ≤10 MB per our limit), binary transparent PNG response |
 | Video | none | do not add controls |
 
 Verify live provider docs before changing model IDs, params, prices, or limits.
@@ -504,7 +505,7 @@ copy, logos, or exact layouts.
   `src/features/<feature>/components`.
 - Prefer composing Base UI primitives over adding a component library.
 - Keep `lucide-react` as the only icon set.
-- Icon language (2026-11-02): `MessagesSquare` for chat, `AudioLines` for music,
+- Icon language (2026-11-02): `MessagesSquare` for chat, `Eraser` for background removal,
   `Clapperboard` for video, `ImagePlus`/`Image` for images, `ArrowUpRight` for primary
   actions. `Sparkles` is retired — do not reintroduce it as decoration.
 - Extract a component when two features need it, not preemptively.
@@ -519,7 +520,8 @@ copy, logos, or exact layouts.
 - Image Studio: composer row (prompt + size + count) above a result grid; tabs for
   Generate / History.
 - Chat: session list column + thread + composer. Keep the composer visible.
-- Music: composer + history list with a real `<audio>`-backed player.
+- Background Studio: uploader, before/after comparison on a checkerboard, download, tabs
+  for Studio / History.
 - Empty states always offer the next useful action.
 
 ### 8.5 Copy rules (honesty)
@@ -539,7 +541,7 @@ copy, logos, or exact layouts.
 - [ ] Images have meaningful `alt` (or empty when decorative).
 - [ ] Loading/error changes are announced (`role="status"`, `role="alert"`).
 - [ ] Both themes pass contrast for muted text, disabled controls, and focus rings.
-- [ ] Keyboard-only run: nav → generate → open result → send chat → play track.
+- [ ] Keyboard-only run: nav → generate → open result → send chat → remove a background.
 
 ---
 
@@ -551,7 +553,7 @@ React Query **is already installed** and is the only server-state cache. Do not 
 second cache (Zustand, SWR, Redux) or copy API responses into global state.
 
 - Query keys in use: `["dashboard-summary"]`, `["current-user"]`, `["image-history"]`,
-  `["music-history"]`, `["conversations"]`, `["conversation", sessionId]`.
+  `["background-history"]`, `["conversations"]`, `["conversation", sessionId]`.
 - Defaults: `staleTime: 60s`, `retry: 1`, `refetchOnWindowFocus: false`.
 - Mutations must invalidate what they changed plus `["current-user"]` and
   `["dashboard-summary"]` when quota changes.
@@ -649,7 +651,7 @@ across instances.
 - `findOneAndUpdate(..., { upsert: true, new: true })` increments atomically; one E11000
   retry covers two concurrent first hits.
 - Budgets apply to PRO as well as FREE: they protect provider spend, not the plan.
-- Current budgets: image 10/min, music 6/min, conversation message 30/min, per user.
+- Current budgets: image 10/min, background 10/min, conversation message 30/min, per user.
   Change them only in `RATE_LIMITS`.
 - Middleware order is `zValidator` → `rateLimitGuard` → `quotaGuard`, so rejected payloads
   and rate-limited requests never reserve quota.
@@ -714,7 +716,7 @@ rewrite the backend to make it look different.
 - [ ] **C-3 (deferred)** Stream assistant replies with a stop button and a mock-free
       production path; requires the route to change from JSON to SSE.
 - [x] Show the active provider/mock badge on the image studio when `mock: true` (2026-11-01);
-      chat and music still need it.
+      chat and background removal still need it.
 - [x] Light/dark/system theme toggle in the navbar (2026-11-01).
 - [ ] Keyboard and 320 px pass across all five surfaces; manual pass in both themes.
 - [ ] Add `loading.tsx` / `error.tsx` boundaries per segment.
@@ -725,7 +727,7 @@ rewrite the backend to make it look different.
 - [ ] Stripe event idempotency + `stripe_events` collection.
 - [ ] Generate a request id and return it in error responses.
 - [ ] Bounded provider timeouts exposed as stable error codes.
-- [ ] Cursor pagination for image/music/conversation history.
+- [ ] Cursor pagination for image/background/conversation history.
 
 ### Phase D — Demo and portfolio
 
@@ -742,7 +744,7 @@ rewrite the backend to make it look different.
 2. Read plan and remaining free generations.
 3. Generate one image, open it, download it, find it in history.
 4. Ask a chat question and see the reply persisted.
-5. Generate a track and play it.
+5. Upload an image in Background Studio, compare before/after, download the cutout.
 6. Hit the free limit and see the upgrade modal.
 7. Complete Stripe test checkout; confirm PRO only after the webhook.
 8. Open Video and see the honest "not available" page.
@@ -765,7 +767,7 @@ If a step is unavailable in the demo environment, say why instead of staging a f
 | Image provider | Cloudflare FLUX.1 schnell | Quality, cost, or latency no longer fit |
 | Chat provider | Groq `openai/gpt-oss-120b` first, Gemini `gemini-3.6-flash` fallback (C-1) | Rate limits, price, or quality change |
 | Chat transport | Request/response JSON until C-3; no fake stop button | Streaming is worth the SSE + abort work |
-| Music provider | Treblo v3 | Contract, quality, or cost changes |
+| Background provider | Photoroom `segment-v1` | Contract, quality, or cost changes |
 | Video | Disabled, honest page | A verified provider + jobs + billing exist |
 | Free quota | 5 shared successful requests | Product owner changes pricing |
 | PRO quota | No cap in code; copy says "no free-tier cap" | A fair-use policy is enforced |

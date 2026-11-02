@@ -11,7 +11,7 @@ import { isRetryableStatus, retryWithBackoff } from "./retry";
 import type { ChatGenerationResult, ChatMessage } from "./types";
 
 const SYSTEM_PROMPT =
-  "You are Vision, a concise assistant inside a creative AI studio. Help users turn ideas into images, music, and marketing assets. Answer in 1-3 short paragraphs and stay on creative work.";
+  "You are Vision, a concise assistant inside a creative AI studio. Help users turn ideas into images, background cutouts, and marketing assets. Answer in 1-3 short paragraphs and stay on creative work.";
 
 const MAX_HISTORY = 12;
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";

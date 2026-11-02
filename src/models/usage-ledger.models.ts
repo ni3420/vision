@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 
-export type UsageKind = "image" | "music" | "conversation";
+export type UsageKind = "image" | "background" | "music" | "conversation";
 export type UsageStatus = "reserved" | "settled" | "refunded";
 
 export interface IUsageLedger {
@@ -16,7 +16,12 @@ export interface IUsageLedger {
 const UsageLedgerSchema = new Schema<IUsageLedger>(
   {
     userId: { type: String, required: true, index: true },
-    kind: { type: String, enum: ["image", "music", "conversation"], required: true },
+    // "music" stays in the enum so historical ledger rows remain valid.
+    kind: {
+      type: String,
+      enum: ["image", "background", "music", "conversation"],
+      required: true,
+    },
     status: {
       type: String,
       enum: ["reserved", "settled", "refunded"],

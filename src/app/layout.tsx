@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     template: "%s · Vision",
   },
   description:
-    "Generate images, chat with an AI assistant, and compose music tracks in one private workspace.",
+    "Generate images, remove image backgrounds, and chat with an AI assistant in one private workspace.",
 };
 
 export default function RootLayout({

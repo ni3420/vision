@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { generateImage } from "../src/server/ai/image";
 import { generateChatReply } from "../src/server/ai/chat";
-import { generateMusic } from "../src/server/ai/music";
+import { removeBackground } from "../src/server/ai/background";
 import {
   buildObjectKey,
   deleteObject,
@@ -52,16 +52,29 @@ const chat = await generateChatReply(
 assert.ok(chat.text.length > 0);
 console.log(`chat ok    ${chat.provider}/${chat.model} ${chat.text.length} chars`);
 
-const music = await generateMusic({ prompt: "lofi beat", durationSec: 4 });
-assert.equal(music.bytes.subarray(0, 4).toString(), "RIFF");
-assert.ok(music.bytes.length > 1000, "audio bytes should be non-trivial");
+const cutout = await removeBackground({
+  bytes: image.bytes,
+  mime: "image/jpeg",
+  filename: "source.jpg",
+});
+assert.equal(cutout.mime, "image/png");
+assert.equal(cutout.mock, true, "smoke runs without a Photoroom key");
+assert.equal(
+  cutout.bytes.subarray(0, 8).toString("hex"),
+  "89504e470d0a1a0a",
+  "cutout should be a PNG"
+);
+assert.equal(cutout.bytes[25], 6, "cutout should have an alpha channel");
 console.log(
-  `music ok   ${music.provider}/${music.model} ${music.bytes.length} bytes ${music.durationSec}s`
+  `background ok ${cutout.provider}/${cutout.model} ${cutout.bytes.length} bytes ${cutout.width}x${cutout.height}`
 );
 
 const key = buildObjectKey("smoke-user", "image", "jpg");
+const cutoutKey = buildObjectKey("smoke-user", "background", "png");
 assert.ok(isOwnedKey(key, "smoke-user"));
+assert.ok(isOwnedKey(cutoutKey, "smoke-user"));
 assert.ok(!isOwnedKey(key, "another-user"));
+assert.ok(!isOwnedKey(cutoutKey, "another-user"));
 
 await putObject(key, image.bytes, "image/jpeg");
 const roundTrip = await readLocalObject(key);
