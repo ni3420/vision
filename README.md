@@ -10,7 +10,25 @@ An AI creative studio that puts image generation, background removal, and conver
 ![Clerk](https://img.shields.io/badge/Clerk-7-6C47FF?style=flat-square&logo=clerk&logoColor=white)
 ![Stripe](https://img.shields.io/badge/Stripe-22-635BFF?style=flat-square&logo=stripe&logoColor=white)
 
+
 Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.app) (Clerk-protected; the deployment may lag the default branch).
+
+## Demo
+
+A 90-second walkthrough of the shipped flows. The table below is the shot list;
+once the recording is uploaded, add `▶ [Watch the demo](URL)` at the top of this
+section.
+
+| Time | Screen | What to show |
+| --- | --- | --- |
+| 0:00 | Dashboard | Signed-in dashboard: plan, credit balance, 7-day activity, recent assets |
+| 0:10 | Generate | Choose a prompt example and a ratio tile, generate 1–2 images, show the credit cost and result gallery |
+| 0:35 | Background Studio | Upload a product photo, compare the cutout against the original, keep the source |
+| 0:55 | Conversation | Ask a question, show the reply, rename the session |
+| 1:10 | Billing | Open `/billing`, show the plan cards, and hand off to Stripe Checkout in test mode |
+
+> **Video link:** _pending the recording._ Replace this line with
+> `▶ [Watch the demo](URL)` when the video is uploaded.
 
 ## Status at a glance
 
@@ -24,7 +42,7 @@ Deployed preview: [vision-steel-pi.vercel.app](https://vision-steel-pi.vercel.ap
 | Video generation | Not available — no provider is configured or integrated |
 | Plans | Free (5 credits over a 7-day trial), Basic ($9/mo, 100 credits), Pro ($29/mo, 500 credits) |
 | Credits | One credit per image request, chat reply, or cutout; failed requests are refunded |
-| Upgrade flow | Stripe Checkout + Billing Portal; signed webhooks flip the plan and refill credits. A dialog prompts when the trial ends or credits run out |
+| Upgrade flow | Stripe Checkout, a server-side Basic↔Pro price swap, and a portal cancellation deep link that returns to the dashboard; signed webhooks flip the plan and refill credits. A dialog prompts when the trial ends or credits run out |
 
 Each generation request consumes one quota unit (an image request for two images is still one unit). Without real provider keys the app runs in **mock mode** locally so every screen can be exercised end to end.
 
@@ -147,7 +165,7 @@ Plans live in `src/lib/plans.ts` and must match two recurring monthly prices in 
 2. Add a webhook endpoint at `<app>/api/billing/webhook` (locally: `stripe listen --forward-to localhost:3000/api/billing/webhook`) and set `STRIPE_WEBHOOK_SECRET`.
 3. Checkout creates or reuses a Stripe customer and stores `stripeCustomerId`; paid users manage cards and cancellation through the Billing Portal at `/billing`.
 
-Plan buttons are plan-aware: a free user sees `Choose Basic/Pro` (Checkout), while an existing subscriber sees `Upgrade to Pro`, `Switch to Basic`, or `Downgrade to Free`, all routed through the Billing Portal so Stripe prorates and cancels the current subscription instead of creating a second one. `GET /api/auth/current` reports `canManageSubscription` (backed by a stored `stripeSubscriptionId`); a paid plan without one — for example a manually granted plan — disables those buttons and says why.
+Plan buttons are plan-aware: a free user sees `Choose Basic/Pro` (Checkout), while an existing subscriber sees `Upgrade to Pro` or `Switch to Basic`. Paid-to-paid changes go through `POST /api/billing/change-plan`, which swaps the subscription price server-side with proration because the default Billing Portal configuration disables plan updates. `Downgrade to Free` opens the portal's cancellation flow through a deep link, and Stripe's `after_completion.redirect` returns the browser to the dashboard. `GET /api/auth/current` reports `canManageSubscription` (backed by a stored `stripeSubscriptionId`); a paid plan without one — for example a manually granted plan — disables those buttons and explains why.
 
 The webhook handles `checkout.session.completed`, `customer.subscription.created|updated|deleted`, `invoice.paid`, and `invoice.payment_failed`. Event IDs are persisted in `stripe_events`, so a duplicate delivery is acknowledged without being applied twice; a failed handler removes the marker so Stripe's retry can run again.
 
@@ -166,6 +184,10 @@ Free accounts get 5 credits for 7 days. Paid credits refill every 30 days and on
 | `bun run lint` | ESLint |
 | `bun run test` | Unit tests (Bun runner): quota, rate limiting, dashboard summary, image schemas, generation error copy, AI mode resolution |
 | `bun run smoke` | Adapter smoke test; forces `AI_MODE=mock` and verifies JPEG bytes, resizing, chat text, a transparent cutout PNG, and a storage round-trip |
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and on every pull request. The `verify` job installs with `--frozen-lockfile` on Bun 1.4.2, then runs typecheck, lint, the unit suite, and the adapter smoke test. The `build` job runs only after `verify` passes and produces a production build with placeholder Clerk and Mongo values, so CI never needs real secrets.
 
 ## API
 
@@ -190,7 +212,7 @@ All routes are mounted under `/api` and require a Clerk session unless noted. Mu
 | `GET` | `/api/billing/plans` | Plan catalog plus which plans have a configured Stripe price |
 | `POST` | `/api/billing/checkout` | Create a Checkout session for `BASIC` or `PRO` |
 | `POST` | `/api/billing/change-plan` | Switch an existing Stripe subscription between `BASIC` and `PRO` |
-| `POST` | `/api/billing/portal` | Create a Billing Portal session for the stored customer |
+| `POST` | `/api/billing/portal` | Create a Billing Portal session for the stored customer; `{ flow: "cancel" }` uses Stripe's cancellation deep link with an automatic redirect back to the dashboard |
 | `POST` | `/api/billing/webhook` | Stripe events (public, signature-verified, idempotent) |
 
 Stable error codes include `TRIAL_EXPIRED` (403), `QUOTA_EXCEEDED` (403), `USER_NOT_INITIALIZED` (404), `DUPLICATE_REQUEST` (409), `ALREADY_SUBSCRIBED` (409), `RATE_LIMITED` (429), `PROVIDER_NOT_CONFIGURED` (503), `STORAGE_NOT_CONFIGURED` (503), `BILLING_NOT_CONFIGURED` (503), `PROVIDER_CALL_FAILED` (502), and `STORAGE_WRITE_FAILED` (502). Provider and storage failures include `retryable`.
@@ -219,12 +241,12 @@ Stable error codes include `TRIAL_EXPIRED` (403), `QUOTA_EXCEEDED` (403), `USER_
 ## Known limitations
 
 - **Video** is not implemented. No free, production-ready text-to-video API is wired in, so the page is a placeholder rather than a dead button.
-- **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image and conversation schemas, chat/generation error copy, grouping and relative-time helpers, and AI mode resolution. There is no browser E2E suite, database integration test, or CI workflow yet.
+- **Tests** cover quota semantics, rate-limit windows, retry/backoff, ImageKit signing and upload, pure dashboard logic, image and conversation schemas, chat/generation error copy, grouping and relative-time helpers, and AI mode resolution. There is no browser E2E suite or database-backed integration test yet; CI covers typecheck, lint, unit tests, the adapter smoke test, and a production build.
 - **Background removal** calls remove.bg v1.0 (Photoroom remains an explicit fallback via `BACKGROUND_PROVIDER`). A live preview call succeeded on 2026-11-02: a 512×512 JPEG produced a 500×500 RGBA PNG, 91.3% fully transparent, in ~4.3 s. Full-resolution output consumes remove.bg credits and has not been exercised. Without any background key outside production the route returns a visibly labelled local mock.
-- **UI verification** for the image-generator, conversation, and background-studio surfaces is static (typecheck, lint, build); a signed-in browser pass needs a Clerk session and MongoDB, which this environment does not have.
-- **Live chat** targets `openai/gpt-oss-120b` and `gemini-3.6-flash`, but those IDs are documentation-verified rather than exercised here: the local key is a placeholder, so no provider call was made. Chat is still request/response — no streaming, stop button, or token usage.
+- **UI verification** was a signed-in browser pass on 2026-11-02 covering `/`, `/billing`, `/image-generator`, Background Studio, and conversation, backed by typecheck, lint, and a production build. There is no automated browser E2E suite yet.
+- **Chat** was exercised end to end against Groq `openai/gpt-oss-120b` on 2026-11-02: replies persisted and one credit was charged per reply. The Gemini `gemini-3.6-flash` fallback is implemented, but the local Gemini key is an OAuth-style token that Google rejects with `400 API_KEY_INVALID`, so only the primary path has run. Chat is request/response — no streaming, stop button, or token usage.
 - **Rate limiting** covers generation, conversation messages, and billing actions; auth, creating an empty session, and history reads are unmetered. The limiter fails open if MongoDB is unreachable. A session created with a first message is rate limited.
-- **Billing is not live-verified.** `STRIPE_SECRET_KEY` is present but `STRIPE_BASIC_PRICE_ID`, `STRIPE_PRO_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` are empty in this environment, so checkout returns `503 BILLING_NOT_CONFIGURED` by design. The webhook path is covered by unit-style logic only; no live Stripe event has been processed here.
+- **Billing** was exercised in Stripe test mode on 2026-11-02: Checkout, Basic↔Pro price swaps, portal access, cancellation, the post-cancel redirect to the dashboard, and a `customer.subscription.deleted` webhook that downgraded the user. It has not run against live-mode Stripe. Because `cancel_at_period_end` reads false on API `2026-06-24.dahlia`, a subscription scheduled to cancel still looks active on `/billing` until the period ends.
 - **Credit refill** is lazy: a paid allowance refills on the next quota check after 30 days, and `invoice.paid` can refill sooner. There is no scheduled job.
 - The free-quota path has not been exercised against a live MongoDB here; unit tests mock the models and the HTTP flow is statically verified only.
 - History endpoints return the newest 60 images / 30 cutouts; cursor pagination is not implemented.
@@ -233,7 +255,7 @@ Stable error codes include `TRIAL_EXPIRED` (403), `QUOTA_EXCEEDED` (403), `USER_
 
 1. Per-route metadata, Open Graph tags, and an OG image.
 2. Rate limits on auth and session creation, and segment-level error boundaries.
-3. Browser E2E tests and CI, then an end-to-end demo dry run.
+3. Browser E2E tests against a seeded database, then an end-to-end demo dry run.
 4. Image editing (background removal, inpainting) behind verified providers.
 5. Video only after image workflows and unit economics are validated.
 
