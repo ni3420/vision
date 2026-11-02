@@ -126,7 +126,6 @@ const app = new Hono()
         subscription_data: { metadata: { userId, plan } },
         success_url: `${appOrigin}/billing?checkout=success`,
         cancel_url: `${appOrigin}/billing?checkout=cancelled`,
-        return_url:`${appOrigin}`
       })
 
       if (!session.url) {
