@@ -27,13 +27,13 @@ export function getStripe(): Stripe {
 
 export function appUrl(): string {
   return (
-    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "") ||
+    process.env.APP_URL?.trim().replace(/\/+$/, "") ||
     "http://localhost:3000"
   )
 }
 
 // Stripe redirects the browser back to an absolute URL. In development the app
-// is often reachable through a tunnel (ngrok, LAN), so NEXT_PUBLIC_APP_URL
+// is often reachable through a tunnel (ngrok, LAN), so APP_URL
 // would send the user to a different origin where their session does not
 // exist. Production stays pinned to the configured URL.
 export function requestAppUrl(request: Request): string {

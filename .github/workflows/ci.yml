@@ -50,7 +50,7 @@ jobs:
       # Placeholders only. The app resolves providers and validates env at
       # request time, so the build needs syntactically valid values, not real
       # secrets. Clerk's publishable key is the documented dummy example key.
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_URL: http://localhost:3000
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
       CLERK_SECRET_KEY: sk_test_ci_placeholder
       DB_URL: mongodb://127.0.0.1:27017/vision

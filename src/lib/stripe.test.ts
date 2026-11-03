@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { requestAppUrl } from "./stripe"
 
 const originalNodeEnv = process.env.NODE_ENV
-const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL
+const originalAppUrl = process.env.APP_URL
 
 function restore(name: string, value: string | undefined) {
   if (value === undefined) {
@@ -22,7 +22,7 @@ function requestWith(headers: Record<string, string>) {
 
 afterEach(() => {
   restore("NODE_ENV", originalNodeEnv)
-  restore("NEXT_PUBLIC_APP_URL", originalAppUrl)
+  restore("APP_URL", originalAppUrl)
 })
 
 describe("requestAppUrl", () => {
@@ -51,7 +51,7 @@ describe("requestAppUrl", () => {
 
   it("ignores a malformed origin", () => {
     restore("NODE_ENV", "development")
-    restore("NEXT_PUBLIC_APP_URL", "http://localhost:3000")
+    restore("APP_URL", "http://localhost:3000")
 
     expect(requestAppUrl(requestWith({ origin: "not a url" }))).toBe(
       "http://localhost:3000"
@@ -60,7 +60,7 @@ describe("requestAppUrl", () => {
 
   it("keeps the configured URL in production", () => {
     restore("NODE_ENV", "production")
-    restore("NEXT_PUBLIC_APP_URL", "https://vision.example.com/")
+    restore("APP_URL", "https://vision.example.com/")
 
     expect(
       requestAppUrl(requestWith({ origin: "https://evil.example" }))

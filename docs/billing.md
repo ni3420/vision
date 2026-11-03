@@ -78,12 +78,12 @@ STRIPE_SECRET_KEY=
 STRIPE_BASIC_PRICE_ID=
 STRIPE_PRO_PRICE_ID=
 STRIPE_WEBHOOK_SECRET=
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
 ```
 
 `STRIPE_PRO_PRICE_ID` falls back to the legacy `NEXT_PUBLIC_STRIPE_PRO_PRICE_ID` when empty.
 
-Stripe return URLs use `NEXT_PUBLIC_APP_URL` in production and the browser's request
+Stripe return URLs use `APP_URL` in production and the browser's request
 origin in development, so tunnels such as ngrok never fall back to `localhost` (which
 loses the session). Checkout success/cancel return to `/billing`.
 

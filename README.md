@@ -85,7 +85,7 @@ cd vision
 bun install
 
 cp .env.example .env.local
-# edit .env.local: Clerk keys and NEXT_PUBLIC_APP_URL
+# edit .env.local: Clerk keys and APP_URL
 # DB_URL already points at the compose service
 
 docker compose up -d      # MongoDB 7 on 127.0.0.1:27017
@@ -104,7 +104,7 @@ The complete list with comments lives in [`.env.example`](.env.example).
 | --- | --- | --- |
 | Database | `DB_URL` | Always |
 | Auth | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Always |
-| App | `NEXT_PUBLIC_APP_URL` | Production (Stripe redirects; dev uses the request origin) |
+| App | `APP_URL` | Production (Stripe redirects; dev uses the request origin) |
 | Runtime mode | `AI_MODE` (`auto` \| `live` \| `mock`) | Optional, defaults to `auto` |
 | Image provider | `CLOUDFARE_URL` + `CLOUDFARE_API_KEY` (your own Worker), or `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (direct) | For live images |
 | Chat provider | `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | For live chat |
